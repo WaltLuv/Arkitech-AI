@@ -73,7 +73,7 @@ _Avoid_: credit back, reversal
 ### Desktops
 
 **Desktop**:
-An isolated Orgo-hosted machine that a `computer` **Agent** operates. Persistent in its files, identity, and installed applications, not in being always on: it is created lazily, stopped when idle, and started on demand, losing running processes and its IP each time.
+An isolated Orgo-hosted machine that a `computer` **Agent** operates. Persistent in its files, identity, and installed applications, not in being always on: it is created lazily, started on demand, and stopped by Arkitech when its work ends or its **Control Lease** lapses, losing running processes and its IP each time.
 _Avoid_: VM, computer (unqualified), sandbox, machine, instance
 
 **Machine Status**:
