@@ -22,33 +22,29 @@ type statsType = {
 function RunPage() {
 
     const [agentRunList, setAgentRunList] = useState<AgentRunType[]>([])
-    const [loading, setLoading] = useState(false);
+    // Starts true because the fetch below runs on mount.
+    const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState<statsType>();
     useEffect(() => {
-        GetAllUserAgentRun();
+        // `cancelled` stops a response that lands after unmount from writing state.
+        let cancelled = false
+        axios.get('/api/agentlog')
+            .then((result) => {
+                if (cancelled) return
+                const runs: AgentRunType[] = result?.data ?? []
+                setAgentRunList(runs);
+                setStats({
+                    completed: runs.filter((item) => item.status == 'completed').length,
+                    failed: runs.filter((item) => item.status == 'failed').length,
+                    scheduled: runs.filter((item) => item.status == 'scheduled').length,
+                })
+            })
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            })
+        return () => { cancelled = true }
     }, [])
 
-    const GetAllUserAgentRun = async () => {
-        setLoading(true);
-        try {
-            const result = await axios.get('/api/agentlog');
-            console.log(result);
-            setAgentRunList(result.data);
-
-            const completedRun = result?.data.filter((item: AgentRunType) => item.status == 'completed')
-            const failedRun = result?.data.filter((item: AgentRunType) => item.status == 'failed')
-            const scheduledRun = result?.data.filter((item: AgentRunType) => item.status == 'scheduled')
-
-            setStats({
-                completed: completedRun.length,
-                failed: failedRun.length,
-                scheduled: scheduledRun.length,
-
-            })
-        } finally {
-            setLoading(false);
-        }
-    }
 
     return (
         <div className='p-10 md:px-15 lg:px-28'>

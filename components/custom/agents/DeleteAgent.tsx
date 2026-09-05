@@ -11,7 +11,6 @@ import {
     AlertDialogFooter,
     AlertDialogHeader,
     AlertDialogTitle,
-    AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import axios from 'axios'
 import { toast } from '@/components/ui/toast'
@@ -20,8 +19,8 @@ import { Loader2Icon } from 'lucide-react'
 type props = {
     openAlert: boolean,
     agentId: string | undefined,
-    closeAlert: any,
-    refreshData: any
+    closeAlert: () => void,
+    refreshData: () => void
 }
 
 function DeleteAgent({ openAlert, agentId, closeAlert, refreshData }: props) {

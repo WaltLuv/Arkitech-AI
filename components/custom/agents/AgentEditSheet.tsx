@@ -4,7 +4,7 @@
  * Agent editor sheet for updating instructions, schedule, skills, status, image, and tool connections.
  */
 
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useState } from "react"
 
 import {
     Sheet,
@@ -33,16 +33,14 @@ import {
 } from "@/components/ui/select"
 
 import {
-    Link2,
     Loader2,
     Loader2Icon,
     Plus,
     Shuffle,
-    Unlink,
     X,
 } from "lucide-react"
 
-import { CreatedAgentType } from "./CreateAgent"
+import { AgentSchedule, CreatedAgentType } from "./CreateAgent"
 import { toast } from "@/components/ui/toast"
 import axios from "axios"
 import Image from "next/image"
@@ -50,9 +48,9 @@ import Image from "next/image"
 type Props = {
     children?: React.ReactNode
     agentConfig: CreatedAgentType | null,
-    setUpdatedAgent: any,
+    setUpdatedAgent: (agent: CreatedAgentType | null) => void,
     openSheet_?: boolean,
-    closeSheet?: any
+    closeSheet?: (open: boolean) => void
 }
 
 type EditableTool = {
@@ -85,16 +83,43 @@ function AgentEditSheet({
     const [openSheet, setOpenSheet] = useState(openSheet_);
     const [loadingTools, setLoadingTools] = useState(false);
     const [disconnectToolLoading, setDisconnectToolLoading] = useState(false);
-    useEffect(() => {
-        setDraftAgent(agentConfig)
-        agentConfig && GetTools();
-    }, [agentConfig])
+    const fetchTools = useCallback(
+        () =>
+            axios
+                .get('/api/agent/tools?agentId=' + agentConfig?.agentId)
+                .then((result) => result.data),
+        [agentConfig],
+    )
 
-    const updateDraft = (key: string, value: any) => {
-        setDraftAgent((prev: any) => ({
-            ...prev,
-            [key]: value,
-        }))
+    // Resetting derived state when a different agent is passed in belongs in
+    // render. In an effect it renders the previous agent's draft once first.
+    const [renderedAgentConfig, setRenderedAgentConfig] = useState(agentConfig)
+    if (agentConfig !== renderedAgentConfig) {
+        setRenderedAgentConfig(agentConfig)
+        setDraftAgent(agentConfig)
+        setLoadingTools(Boolean(agentConfig))
+    }
+
+    useEffect(() => {
+        if (!agentConfig) return
+        // `cancelled` stops a response that lands after unmount, or after a
+        // different agent is selected, from writing state.
+        let cancelled = false
+        fetchTools()
+            .then((data) => {
+                if (!cancelled) setTools(data)
+            })
+            .finally(() => {
+                if (!cancelled) setLoadingTools(false)
+            })
+        return () => { cancelled = true }
+    }, [agentConfig, fetchTools])
+
+    const updateDraft = <K extends keyof CreatedAgentType>(
+        key: K,
+        value: CreatedAgentType[K],
+    ) => {
+        setDraftAgent((prev) => (prev ? { ...prev, [key]: value } : prev))
     }
 
     const shuffleImage = () => {
@@ -143,13 +168,6 @@ function AgentEditSheet({
 
 
     //Get Tools
-    const GetTools = async () => {
-        setLoadingTools(true);
-        const result = await axios.get('/api/agent/tools?agentId=' + agentConfig?.agentId)
-        console.log(result.data);
-        setTools(result.data);
-        setLoadingTools(false);
-    }
 
     const ConnectedTools = tools.filter(tool => tool.connected == true);
 
@@ -159,7 +177,7 @@ function AgentEditSheet({
         draftAgent?.schedule?.type === "once" ||
         draftAgent?.schedule?.type === "recurring"
 
-    const handleSubmit = async (event: any) => {
+    const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         //update to DB as well
         const result = await axios.put('/api/agent/configure', {
@@ -182,7 +200,7 @@ function AgentEditSheet({
         })
 
         setOpenSheet(false);
-        closeSheet(false)
+        closeSheet?.(false)
 
     }
 
@@ -230,7 +248,7 @@ function AgentEditSheet({
     }
 
     return (
-        <Sheet open={openSheet} onOpenChange={(v: boolean) => { setOpenSheet(v); closeSheet(v) }}>
+        <Sheet open={openSheet} onOpenChange={(v: boolean) => { setOpenSheet(v); closeSheet?.(v) }}>
             <SheetTrigger >
                 {children}
             </SheetTrigger>
@@ -242,9 +260,11 @@ function AgentEditSheet({
                 >
                     <SheetHeader className="border-b px-5 py-4">
                         <div className="flex items-center gap-2.5">
-                            <img
+                            <Image
                                 src={draftAgent.agentImage ?? "/logo.svg"}
                                 alt={draftAgent.name ?? "Agent"}
+                                width={40}
+                                height={40}
                                 className="size-10 rounded-xl border bg-muted p-1"
                             />
 
@@ -266,7 +286,9 @@ function AgentEditSheet({
 
                             {/* Image */}
                             <section className="flex items-center gap-4 rounded-2xl border bg-muted/30 p-4">
-                                <img
+                                <Image
+                                    width={40}
+                                    height={40}
                                     src={
                                         draftAgent.agentImage ??
                                         "/logo.svg"
@@ -397,7 +419,7 @@ function AgentEditSheet({
                                                     "schedule",
                                                     {
                                                         ...draftAgent.schedule,
-                                                        type: value,
+                                                        type: value as AgentSchedule["type"],
                                                     }
                                                 )
                                             }
@@ -472,7 +494,7 @@ function AgentEditSheet({
                                                     {
                                                         ...draftAgent.schedule,
                                                         frequency:
-                                                            value,
+                                                            value as AgentSchedule["frequency"],
                                                     }
                                                 )
                                             }
@@ -615,7 +637,7 @@ function AgentEditSheet({
                                                     ) : (
                                                         <Unlink className="size-4 text-muted-foreground" />
                                                     )} */}
-                                                    <img src={tool.logo} alt={tool.name} width={30} height={30}
+                                                    <Image src={tool.logo} alt={tool.name} width={30} height={30}
                                                         className="rounded-lg"
                                                     />
                                                 </div>

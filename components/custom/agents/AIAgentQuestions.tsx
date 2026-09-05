@@ -14,7 +14,7 @@ type AnswerValue = string | string[]
 
 type Props = {
     questionList: ClarificationQuestion[]
-    onComplete: any
+    onComplete: (answers: Record<string, AnswerValue>) => void
 }
 
 export default function AIAgentQuestions({

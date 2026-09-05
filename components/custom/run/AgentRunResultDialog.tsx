@@ -10,6 +10,7 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { Bot, CalendarCheck, CircleAlert, ClipboardList } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import Image from "next/image"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 export type AgentRunResult = {
@@ -17,8 +18,8 @@ export type AgentRunResult = {
     agentId: string
     email: string
     status: string
-    output: any
-    error: any
+    output: unknown
+    error: unknown
     scheduledFor?: string
     completedAt: string | null
     createdAt: string
@@ -44,7 +45,7 @@ function AgentRunResultDialog({ run, open, onOpenChange }: Props) {
                 <DialogHeader className="border-b px-5 py-4 pr-12">
                     <div className="flex min-w-0 items-center gap-3">
                         {run?.agentImage ? (
-                            <img src={run.agentImage} alt={run.name ?? "Agent"} className="size-11 rounded-xl border bg-white p-2" />
+                            <Image src={run.agentImage} alt={run.name ?? "Agent"} width={44} height={44} className="size-11 rounded-xl border bg-white p-2" />
                         ) : (
                             <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border bg-slate-50">
                                 <Bot className="size-5 text-slate-600" />
@@ -76,13 +77,13 @@ function AgentRunResultDialog({ run, open, onOpenChange }: Props) {
                         </section>
                     )}
 
-                    {run?.error && (
+                    {Boolean(run?.error) && (
                         <section className="mb-5 rounded-lg border border-red-200 bg-red-50 p-4">
                             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-red-800">
                                 <CircleAlert className="size-4" />
                                 Error
                             </div>
-                            <p className="whitespace-pre-wrap text-sm leading-6 text-red-700">{formatValue(run.error)}</p>
+                            <p className="whitespace-pre-wrap text-sm leading-6 text-red-700">{formatValue(run?.error)}</p>
                         </section>
                     )}
 
@@ -98,11 +99,11 @@ function AgentRunResultDialog({ run, open, onOpenChange }: Props) {
                                     </div>
                                 )}
 
-                                {run?.output && typeof run.output != "string" && (
+                                {Boolean(run?.output) && typeof run?.output != "string" && (
                                     <details className="rounded-lg border bg-slate-950 text-slate-100" open={!outputText}>
                                         <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-slate-100">Full result payload</summary>
                                         <pre className="max-h-[420px] overflow-auto border-t border-white/10 p-4 text-xs leading-5">
-                                            {formatValue(run.output)}
+                                            {formatValue(run?.output)}
                                         </pre>
                                     </details>
                                 )}
@@ -131,17 +132,20 @@ function StatusBadge({ status }: { status: string }) {
     )
 }
 
-function getPrimaryOutput(output: any) {
+function getPrimaryOutput(output: unknown): string {
     if (!output) return ""
     if (typeof output == "string") return output
-    if (typeof output.finalOutput == "string") return output.finalOutput
-    if (typeof output.summary == "string") return output.summary
-    if (typeof output.message == "string") return output.message
-    if (typeof output.result == "string") return output.result
+    if (typeof output != "object") return ""
+
+    // Agents have returned the text under several different keys over time.
+    const record = output as Record<string, unknown>
+    for (const key of ["finalOutput", "summary", "message", "result"]) {
+        if (typeof record[key] == "string") return record[key] as string
+    }
     return ""
 }
 
-function formatValue(value: any) {
+function formatValue(value: unknown) {
     if (typeof value == "string") return value
 
     try {

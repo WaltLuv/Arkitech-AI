@@ -3,7 +3,7 @@
 /**
  * Client provider layer for theme, sidebar state, user data, and toast rendering.
  */
-import { UserDetailContext } from '@/context/UserDetailContext';
+import { UserDetail, UserDetailContext } from '@/context/UserDetailContext';
 import { useUser } from '@clerk/nextjs';
 import axios from 'axios';
 import React, { useEffect, useState } from 'react'
@@ -15,18 +15,17 @@ function Provider({
 }>) {
 
     const { isLoaded, isSignedIn } = useUser();
-    const [userDetail, setUserDetail] = useState();
+    const [userDetail, setUserDetail] =
+        useState<UserDetail | UserDetail[] | undefined>();
     useEffect(() => {
-        if (isLoaded && isSignedIn) {
-            createNewUser();
-        }
+        if (!isLoaded || !isSignedIn) return
+        let cancelled = false
+        axios.post('/api/users').then((result) => {
+            if (!cancelled) setUserDetail(result.data)
+        })
+        return () => { cancelled = true }
     }, [isLoaded, isSignedIn])
 
-    const createNewUser = async () => {
-        const result = await axios.post('/api/users');
-        console.log(result);
-        setUserDetail(result.data);
-    }
 
     return (
         <div>

@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: 'logos.composio.dev'
+      },
+      {
+        // Generated agent avatars, see app/api/agent/configure/route.ts.
+        protocol: 'https',
+        hostname: 'api.dicebear.com'
       }
     ]
   }

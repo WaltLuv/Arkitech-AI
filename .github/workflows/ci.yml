@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Honours .npmrc, which sets legacy-peer-deps for the stale
+      # @composio/openai-agents peer range. See lib/composio.test.ts.
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      # Builds without credentials: the DB and Composio clients fall back to
+      # placeholders at module scope rather than throwing.
+      - name: Build
+        run: npm run build

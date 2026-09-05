@@ -13,6 +13,7 @@ import axios from "axios"
 import { ArrowRight, Bot, CalendarClock, CheckCircle2, Clock3, Loader2, RefreshCw, Sparkles, TriangleAlert, Zap } from "lucide-react"
 import moment from "moment"
 import { useRouter } from "next/navigation"
+import Image from "next/image"
 import React, { useContext, useEffect, useMemo, useState } from "react"
 
 type AgentRunType = AgentRunResult & {
@@ -24,12 +25,10 @@ function DashboardPage() {
     const { userDetail } = useContext(UserDetailContext)
     const [agentRunList, setAgentRunList] = useState<AgentRunType[]>([])
     const [selectedRun, setSelectedRun] = useState<AgentRunType | null>(null)
-    const [loading, setLoading] = useState(false)
+    // Starts true because the fetch below runs on mount.
+    const [loading, setLoading] = useState(true)
 
-    useEffect(() => {
-        getDashboardRuns()
-    }, [])
-
+    // Refetch bound to the Refresh button, which may write state freely.
     const getDashboardRuns = async () => {
         setLoading(true)
         try {
@@ -39,6 +38,20 @@ function DashboardPage() {
             setLoading(false)
         }
     }
+
+    useEffect(() => {
+        // `cancelled` stops a response that lands after unmount from writing state.
+        let cancelled = false
+        axios.get("/api/agentlog")
+            .then((result) => {
+                if (!cancelled) setAgentRunList(result.data)
+            })
+            .finally(() => {
+                if (!cancelled) setLoading(false)
+            })
+        return () => { cancelled = true }
+    }, [])
+
 
     const dashboardData = useMemo(() => {
         const completed = agentRunList.filter((run) => run.status == "completed")
@@ -106,7 +119,7 @@ function DashboardPage() {
                             {moment().format("dddd, MMMM D")}
                         </p>
                         <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">{greeting}, {firstName}</h1>
-                        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 md:text-base">Here's the latest pulse from your agents, runs, schedules, and anything that needs a closer look.</p>
+                        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 md:text-base">Here&apos;s the latest pulse from your agents, runs, schedules, and anything that needs a closer look.</p>
                     </div>
                     <Button variant="outline" className="w-fit border-white/80 bg-white/80 shadow-sm hover:bg-white" onClick={getDashboardRuns} disabled={loading}>
                         {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
@@ -158,7 +171,7 @@ function DashboardPage() {
                         </div>
                         {dashboardData.needsAttention ? (
                             <div className="flex flex-col gap-4 rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm shadow-amber-100 sm:flex-row sm:items-center sm:justify-between">
-                                <AgentIdentity run={dashboardData.needsAttention} title={dashboardData.needsAttention.name ?? "Agent run"} subtitle={dashboardData.needsAttention.error ?? "This run needs review before it can continue."} />
+                                <AgentIdentity run={dashboardData.needsAttention} title={dashboardData.needsAttention.name ?? "Agent run"} subtitle={typeof dashboardData.needsAttention.error == "string" ? dashboardData.needsAttention.error : "This run needs review before it can continue."} />
                                 <Button variant="outline" className="border-amber-200 bg-white/80 hover:bg-white" onClick={() => router.push("/dashboard/run")}>Review run</Button>
                             </div>
                         ) : (
@@ -304,7 +317,7 @@ function AgentAvatar({ run }: { run: AgentRunType }) {
     return (
         <div className="relative shrink-0">
             {run.agentImage ? (
-                <img src={run.agentImage} alt={run.name ?? "Agent"} className="size-12 rounded-xl border bg-white p-2 shadow-sm" />
+                <Image src={run.agentImage} alt={run.name ?? "Agent"} width={48} height={48} className="size-12 rounded-xl border bg-white p-2 shadow-sm" />
             ) : (
                 <div className="flex size-12 items-center justify-center rounded-xl border bg-white shadow-sm">
                     <Bot className="size-5 text-slate-600" />
@@ -343,9 +356,13 @@ function buildBriefing(completed: number, running: number, attention: number, sc
 function getOutputSummary(run: AgentRunType) {
     if (!run.output) return run.task ?? "Result is ready to review."
     if (typeof run.output == "string") return run.output
-    if (run.output.summary) return run.output.summary
-    if (run.output.message) return run.output.message
-    if (run.output.result) return typeof run.output.result == "string" ? run.output.result : "Result is ready to review."
+    if (typeof run.output != "object") return run.task ?? "Result is ready to review."
+
+    // Agents have returned the text under several different keys over time.
+    const output = run.output as Record<string, unknown>
+    for (const key of ["summary", "message", "result"]) {
+        if (typeof output[key] == "string") return output[key] as string
+    }
     return run.task ?? "Result is ready to review."
 }
 

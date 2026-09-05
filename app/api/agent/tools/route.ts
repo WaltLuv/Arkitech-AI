@@ -21,8 +21,8 @@ export async function GET(req: NextRequest) {
         .where(eq(AgentConfig.agentId, agentId ?? ''));
 
     const agentConfig = result[0];
-    const allowedTools: any = agentConfig?.tools;
-    //@ts-ignore
+    const allowedTools = (agentConfig?.tools as string[] | undefined) ?? [];
+    //@ts-expect-error Composio's response type does not describe this field
     const session = await getOrCreateAgentSession(agentConfig, user?.primaryEmailAddress?.emailAddress)
     const toolKitResult = await session.toolkits();
 

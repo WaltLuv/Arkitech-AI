@@ -135,7 +135,7 @@ export async function PUT(req: NextRequest) {
 
         console.log(result[0]);
         // Remove stale future occurrences before creating a replacement schedule.
-        const deleteScheduledAgentRun = await db.delete(AgentRun)
+        await db.delete(AgentRun)
             .where(and(eq(AgentRun.agentId, agentConfig?.agentId), eq(AgentRun.status, 'scheduled')))
         // Active recurring agents should always have exactly one upcoming run.
         if (agentConfig?.status == 'active') {
@@ -155,14 +155,14 @@ export async function PUT(req: NextRequest) {
 
         return NextResponse.json(result[0])
     }
-    catch (e) {
+    catch {
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
 
     }
 }
 
 
-export async function GET(req: NextRequest) {
+export async function GET() {
     const user = await currentUser();
 
     if (!user) {
@@ -180,16 +180,16 @@ export async function DELETE(req: NextRequest) {
     const { agentId } = await req.json();
 
     try {
-        const deleteAgentRun = await db.delete(AgentRun)
+        await db.delete(AgentRun)
             .where(and(eq(AgentRun.agentId, agentId)))
 
-        const deleteAgentConfig = await db.delete(AgentConfig)
+        await db.delete(AgentConfig)
             .where(eq(AgentConfig.agentId, agentId));
 
 
         return NextResponse.json({ msg: 'Agent Deleted!' }, { status: 200 })
     }
-    catch (e) {
+    catch {
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 400 })
     }
 

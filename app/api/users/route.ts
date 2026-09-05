@@ -4,9 +4,9 @@
 import { db, users } from "@/db";
 import { currentUser } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-export async function POST(req: NextRequest) {
+export async function POST() {
     const user = await currentUser();
 
     // Clerk is the identity source; this table stores app-specific credits/profile data.

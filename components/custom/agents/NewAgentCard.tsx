@@ -3,29 +3,28 @@
  */
 import React from 'react'
 import { CreatedAgentType } from './CreateAgent'
-import { Calendar } from '@/components/ui/calendar'
-import { CalendarCheck2Icon, Delete, Ellipsis, Pause, Pencil, Play, Trash } from 'lucide-react'
+import { CalendarCheck2Icon, Ellipsis, Pause, Pencil, Play, Trash } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuGroup,
     DropdownMenuItem,
-    DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import AgentEditSheet from './AgentEditSheet'
+import Image from "next/image"
 type Props = {
     createdAgent: CreatedAgentType | null,
-    setUpdatedAgent: any
+    setUpdatedAgent: (agent: CreatedAgentType | null) => void
 }
 
 function NewAgentCard({ createdAgent, setUpdatedAgent }: Props) {
     return (
         <div className='flex items-center justify-between border mt-7 p-4 rounded-2xl shadow-md hover:shadow-purple-100 '>
             <div className='flex gap-4 items-center'>
-                <img src={createdAgent?.agentImage} alt={createdAgent?.name}
+                <Image src={createdAgent?.agentImage ?? "/logo.svg"} alt={createdAgent?.name ?? "Agent"}
                     width={80} height={80}
                     className='p-2 bg-slate-100 rounded-xl' />
                 <div className='flex flex-col gap-1'>

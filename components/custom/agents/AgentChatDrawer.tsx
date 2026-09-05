@@ -21,6 +21,8 @@ import { CreatedAgentType } from "./CreateAgent"
 import axios from "axios"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import { getApiErrorMessage } from "@/lib/api-error"
+import Image from "next/image"
 import { toast } from "@/components/ui/toast"
 import { UserDetailContext } from "@/context/UserDetailContext"
 type Props = {
@@ -43,9 +45,13 @@ function AgentChatDrawer({ agent, open, onOpenChange }: Props) {
 
     const messagesEndRef = useRef<HTMLDivElement>(null)
 
-    useEffect(() => {
-        agent && setMessages([])
-    }, [agent])
+    // Resetting derived state when a prop changes belongs in render, not an
+    // effect: an effect would render the previous agent's messages once first.
+    const [renderedAgent, setRenderedAgent] = useState(agent)
+    if (agent !== renderedAgent) {
+        setRenderedAgent(agent)
+        if (agent) setMessages([])
+    }
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({
@@ -90,8 +96,8 @@ function AgentChatDrawer({ agent, open, onOpenChange }: Props) {
             }
 
             setMessages((prev) => [...prev, agentMessage])
-        } catch (error: any) {
-            const message = error?.response?.data?.error || "Sorry, I couldn’t process your message. Please try again."
+        } catch (error) {
+            const message = getApiErrorMessage(error, "Sorry, I couldn’t process your message. Please try again.")
             toast.add({
                 type: "error",
                 title: message,
@@ -117,9 +123,11 @@ function AgentChatDrawer({ agent, open, onOpenChange }: Props) {
             >
                 <SheetHeader className="border-b px-5 py-4 pr-14">
                     <div className="flex items-center gap-3">
-                        <img
-                            src={agent?.agentImage}
+                        <Image
+                            src={agent?.agentImage ?? "/logo.svg"}
                             alt={agent?.name || "Agent"}
+                            width={44}
+                            height={44}
                             className="size-11 rounded-xl bg-slate-100 object-cover p-1"
                         />
 
@@ -183,9 +191,11 @@ function AgentChatDrawer({ agent, open, onOpenChange }: Props) {
 
                         {isAgentReplying && (
                             <div className="flex items-end gap-2">
-                                <img
-                                    src={agent?.agentImage}
+                                <Image
+                                    src={agent?.agentImage ?? "/logo.svg"}
                                     alt={agent?.name || "Agent"}
+                                    width={32}
+                                    height={32}
                                     className="size-8 rounded-full border bg-background object-cover p-1"
                                 />
 
@@ -273,9 +283,11 @@ function AgentMessage({
 }) {
     return (
         <div className="flex items-end gap-2">
-            <img
-                src={agent?.agentImage}
+            <Image
+                src={agent?.agentImage ?? "/logo.svg"}
                 alt={agent?.name || "Agent"}
+                width={32}
+                height={32}
                 className="size-8 rounded-full border bg-background object-cover p-1"
             />
 

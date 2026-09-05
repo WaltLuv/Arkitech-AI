@@ -11,16 +11,17 @@ import {
     DropdownMenuContent,
     DropdownMenuGroup,
     DropdownMenuItem,
-    DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Button } from '@/components/ui/button';
-import { Calendar, CalendarClockIcon, Ellipsis, MessageCircle, Pause, Pencil, Play, PlaySquareIcon, Trash } from 'lucide-react';
+import { CalendarClockIcon, Ellipsis, MessageCircle, Pause, Pencil, Play, PlaySquareIcon, Trash } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import AgentEditSheet from './AgentEditSheet';
 import AgentChatDrawer from './AgentChatDrawer';
 import DeleteAgent from './DeleteAgent';
+import { getApiErrorMessage } from '@/lib/api-error';
+import Image from "next/image"
 import { toast } from '@/components/ui/toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserDetailContext } from '@/context/UserDetailContext';
@@ -34,20 +35,28 @@ function MyAgents() {
     const [openChatDrawer, setOpenChatDrawer] = useState(false);
     const [openDeleteAlert, setOpenDeleteAlert] = useState(false);
     const [selectedAgentId, setSelectedAgentId] = useState<string>()
+    const fetchAgents = () =>
+        axios.get('/api/agent/configure').then((result) => result.data)
+
+    // Used by the event handlers below, which may write state freely.
+    const AllUsersAgent = async () => {
+        setMyAgents(await fetchAgents());
+    }
+
     useEffect(() => {
-        AllUsersAgent();
+        // `cancelled` stops a response that lands after unmount from writing state.
+        let cancelled = false
+        fetchAgents().then((data) => {
+            if (!cancelled) setMyAgents(data)
+        })
+        return () => { cancelled = true }
     }, [])
 
     //fetch ALl User Agents
-    const AllUsersAgent = async () => {
-        const result = await axios.get('/api/agent/configure');
-        console.log(result);
-        setMyAgents(result.data);
-    }
 
     const updateAgentStatus = async (agentConfig: CreatedAgentType) => {
 
-        const result = await axios.put('/api/agent/configure', {
+        await axios.put('/api/agent/configure', {
             ...agentConfig,
             status: agentConfig?.status == 'active' ? 'pause' : 'active'
         })
@@ -82,10 +91,10 @@ function MyAgents() {
                 title: 'Agent Running...',
                 type: 'success'
             })
-        } catch (error: any) {
+        } catch (error) {
             toast.add({
                 type: 'error',
-                title: error?.response?.data?.error || 'Unable to run agent'
+                title: getApiErrorMessage(error, 'Unable to run agent')
             });
         }
 
@@ -95,7 +104,7 @@ function MyAgents() {
     return (
         <div className='mt-5'>
             <h2 className='font-bold text-2xl'>My Agents</h2>
-            <p className='text-sm text-muted-foreground mt-1'>Run, Manage and Update All the agents you've created.</p>
+            <p className='text-sm text-muted-foreground mt-1'>Run, Manage and Update All the agents you&apos;ve created.</p>
 
             <div className='grid grid-cols-2 2xl:grid-cols-3 gap-5 mt-5'>
                 {myAgents === undefined && <AgentCardSkeletonList />}
@@ -103,8 +112,8 @@ function MyAgents() {
                 {myAgents?.map((agent, index) => (
                     <div className='p-3 border rounded-2xl' key={agent.agentId ?? index}>
                         <div className='flex justify-between items-center'>
-                            <img src={agent?.agentImage} alt={agent.name}
-                                width={30} height={30}
+                            <Image src={agent?.agentImage ?? "/logo.svg"} alt={agent.name}
+                                width={64} height={64}
                                 className='p-2 border size-16 rounded-xl bg-slate-100' />
                             <div>
                                 <DropdownMenu>
@@ -185,7 +194,7 @@ function MyAgents() {
 
             <DeleteAgent
                 openAlert={openDeleteAlert}
-                closeAlert={(v: any) => setOpenDeleteAlert(v)}
+                closeAlert={() => setOpenDeleteAlert(false)}
                 agentId={selectedAgentId}
                 refreshData={() => AllUsersAgent()}
             />
