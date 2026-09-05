@@ -1,0 +1,13 @@
+/**
+ * Drizzle Kit configuration for generating and pushing the Postgres schema.
+ */
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+  schema: './db/schema.ts',
+  out: './drizzle',
+  dialect: 'postgresql',
+  dbCredentials: {
+    url: process.env.DATABASE_URL || 'postgresql://placeholder-url',
+  },
+});
