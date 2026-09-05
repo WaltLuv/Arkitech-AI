@@ -8,6 +8,16 @@ Keeping the balance column authoritative and deriving reporting from `AgentRun` 
 
 Dropping the cached balance entirely and summing the ledger on every read. Rejected as an unnecessary migration risk and a hot-path cost, for a number that is read on nearly every page.
 
+## Migration
+
+The ledger is authoritative from the migration point forward, not for all time. Migration writes one `opening_balance` entry per existing user, set to that user's current `usageCredits`, so that the ledger total and the cached balance agree from the first moment the ledger exists. Without it the two disagree immediately: a user holding 100 credits would face a ledger totalling zero.
+
+Historical Runs and past spending are deliberately not backfilled. The data to reconstruct them accurately does not exist, and inventing it would undermine the ledger's only real claim, that it is accurate.
+
+`agentId` and `runId` are nullable, because system entries such as `opening_balance` belong to no Agent and no Run. Every user-caused movement still carries both.
+
+The `opening_balance` entry uses the same idempotency mechanism as every other entry, keyed on the user and the reason, so re-running the migration is a no-op rather than a duplicated grant.
+
 ## Consequences
 
 Idempotency is enforced by a unique key derived from the Run and the reason, not by convention. A repeated write is a no-op returning the existing entry, which is what makes Inngest step retries safe by construction rather than by luck.

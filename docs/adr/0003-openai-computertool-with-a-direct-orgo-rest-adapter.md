@@ -1,21 +1,25 @@
 # OpenAI computerTool driving Orgo through our own REST adapter
 
-Computer-use Agents are driven by OpenAI's `computerTool` from the Agents SDK, executing against Orgo desktops through a small typed adapter we own, written directly against Orgo's HTTP API. We keep the run loop rather than delegating it, because approvals, the Control Lease, event capture, pause, and human takeover all have to happen between turns.
+Computer-use Agents are driven by OpenAI's `computerTool` from the Agents SDK, executing against Orgo desktops through a small typed adapter we own. OpenAI is the agent brain, Orgo is the desktop runtime, and Arkitech owns everything in between.
 
-This is deliberately the less-trodden path. Orgo's own published SDK ships exactly two providers, `orgo` and `anthropic`, both targeting Claude with Anthropic's computer-use tool, and no Orgo artifact we could reach mentions OpenAI at all. We chose OpenAI anyway so that `standard` and `computer` Agents share one agent abstraction, one SDK, and one set of tool-wiring tests.
+The decision rests on what Arkitech must own, not on what any vendor does or does not currently support. Arkitech owns the run loop, approvals, the Control Lease, pause and takeover, screenshot and event capture, credits, and resumable state. Any design that hands the loop to a third party puts those concerns outside our control, and they are the product. The Agents SDK supports `computerTool`, approval interruptions, and resumable `RunState`, which is what the rest of Arkitech is already built on, so `standard` and `computer` Agents share one agent abstraction, one SDK, and one set of tool-wiring tests.
 
 ## Considered Options
 
-Orgo's MCP server, which exposes all 43 API operations as tools, regenerates itself from Orgo's spec so it cannot drift, and returns screenshots as images a model can see. Rejected as the runtime control layer because it is a tool surface for a model, not a typed client our code drives; the control lease and approval gate must be enforced by us, not offered to the model as options. It remains the reference implementation and fixture source.
+Orgo's hosted agent endpoint, which runs its own computer loop. Rejected because intermediate tool calls and screenshots are not exposed through its streaming output, so approvals, pause, takeover, and audit history would all be built on top of a loop we cannot see into.
 
-Orgo's native Anthropic provider, which is the supported path. Rejected for now because it would mean two agent abstractions in one product. If the OpenAI spike fails, switching is a new decision to be recorded here, not a silent fallback.
+Orgo's MCP server, which exposes the API as a tool surface. Rejected as the runtime control layer for a related reason: it offers capabilities to a model, where we need a typed client our own code drives, so that the control lease and approval gate are enforced rather than suggested. It remains a useful reference implementation and fixture source.
+
+Orgo's native Anthropic provider. Rejected for v1 because it would introduce a second agent runtime: a different provider, a likely separate service path, different conversation and resume behaviour, harder integration with existing Composio tools, and less control over credits, approvals, pause, takeover, and audit events. It may be used as an isolated diagnostic spike to prove a desktop works, never in the production path. Adopting it would be a new decision, recorded here.
 
 ## Consequences
 
-There is no Orgo TypeScript SDK; the official one is Python. The adapter is therefore hand-written against the REST contract, using the OpenAPI snapshot that Orgo ships inside `orgo-mcp-server` as the source of truth for request and response shapes.
+The adapter targets the REST contract this project has verified, using the OpenAPI snapshot Orgo publishes inside `orgo-mcp-server`. What SDKs, providers, or model integrations Orgo offers later does not change the decision: Arkitech owns the loop either way, and the adapter is small enough to re-target if a better contract appears.
 
-Two Orgo behaviours are constraints the adapter must encode, not edge cases: a screenshot returns a URL that must be fetched separately to get bytes, and there is no double-click endpoint (it is a click with a flag).
+Two behaviours in that contract are constraints the adapter must encode rather than edge cases: a screenshot returns a URL that must be fetched separately for bytes, and there is no double-click endpoint (it is a click with a flag).
 
-Model compatibility is an open risk, closed only by a live smoke test proving screenshot to action to screenshot against a real desktop. That test is a release gate. It cannot run in the environment this decision was made in, where `orgo.ai` and `platform.openai.com` are both egress-blocked, so the adapter is built and tested against recorded fixtures and the live run happens elsewhere.
+The desktop-driving model is configured separately as `COMPUTER_USE_MODEL`. The standard agent model is not assumed to support computer use.
+
+Model compatibility is an open risk closed only by a live smoke test proving screenshot to action to screenshot against a real desktop. That test is a release gate. It cannot run in the environment this decision was made in, where `orgo.ai` and `platform.openai.com` are egress-blocked, so the adapter is built against recorded fixtures and the live run happens elsewhere.
 
 Orgo is infrastructure, configured under a Computer or Infrastructure setting. It is never a Composio OAuth integration and never appears in the Integrations page beside the user's own connected accounts.
