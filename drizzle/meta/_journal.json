@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1788638600637,
+      "tag": "0000_useful_starfox",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788638600638,
+      "tag": "0001_opening_balance",
+      "breakpoints": true
+    }
+  ]
+}

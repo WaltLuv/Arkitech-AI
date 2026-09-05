@@ -94,9 +94,14 @@ export const AgentRun = pgTable(
       length: 100,
     }).notNull(),
 
+    // scheduled | queued | running | completed | failed | cancelled
     status: varchar("status")
       .default("scheduled")
       .notNull(),
+
+    // Usage Credits charged for this Run, captured at acceptance so a later
+    // price change never restates history. Read this; never assume 1.
+    creditCost: integer("credit_cost").default(1).notNull(),
 
     output: jsonb("output"),
     error: text("error"),
@@ -135,5 +140,54 @@ export const AgentRun = pgTable(
 );
 
 
+/**
+ * Append-only record of every Usage Credit movement, and the source of truth
+ * for what a user has spent. `users.usageCredits` is a cache of this.
+ */
+export const creditLedger = pgTable(
+  "creditLedger",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    userEmail: text("email")
+      .notNull()
+      .references(() => users.email),
+
+    // Null for system entries such as opening_balance, which belong to no
+    // Agent and no Run. Every user-caused movement carries both.
+    agentId: varchar("agentId"),
+    runId: uuid("runId"),
+
+    // Always positive. `direction` says which way it moved.
+    amount: integer("amount").notNull(),
+
+    // debit | credit
+    direction: varchar("direction", { length: 10 }).notNull(),
+
+    // opening_balance | run_accepted | platform_failure | worker_failure |
+    // provider_failure | agent_failure | cancelled_before_execution
+    reason: varchar("reason", { length: 40 }).notNull(),
+
+    balanceAfter: integer("balance_after").notNull(),
+
+    // Makes a repeated write a no-op rather than a double charge or a double
+    // refund. Enforced by the unique index below, not by checking first.
+    idempotencyKey: varchar("idempotency_key", { length: 200 }).notNull(),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  table => [
+    uniqueIndex("credit_ledger_idempotency_key").on(table.idempotencyKey),
+
+    // The dashboard reads a user's entries newest first.
+    index("credit_ledger_user_time").on(table.userEmail, table.createdAt),
+  ],
+);
+
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+export type CreditLedgerEntry = typeof creditLedger.$inferSelect;
+export type NewCreditLedgerEntry = typeof creditLedger.$inferInsert;
