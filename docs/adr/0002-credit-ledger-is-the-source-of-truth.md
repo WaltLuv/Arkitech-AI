@@ -22,7 +22,7 @@ The `opening_balance` entry uses the same idempotency mechanism as every other e
 
 Idempotency is enforced by a unique key derived from the Run and the reason, not by convention. A repeated write is a no-op returning the existing entry, which is what makes Inngest step retries safe by construction rather than by luck.
 
-Credit Cost is captured on the Run at acceptance, so changing the price of an Execution Mode never rewrites history. This is what allows computer Runs to cost 5 while past Runs stay at what they were actually charged.
+Credit Cost is captured on the Run at acceptance, so changing the price of an Execution Mode never rewrites history. Only `standard` exists today, at 1 credit, but the cost is stored rather than assumed, so a future mode priced differently needs no ledger rework and no restatement of past Runs.
 
 The cached balance can drift. That is an accepted, detectable cost: the ledger can always reconstruct the true balance, so drift is a reconciliation bug rather than lost data.
 

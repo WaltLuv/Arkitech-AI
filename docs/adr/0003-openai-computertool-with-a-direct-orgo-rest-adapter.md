@@ -1,5 +1,7 @@
 # OpenAI computerTool driving Orgo through our own REST adapter
 
+**Status: deferred.** Orgo is out of scope for Arkitech AI and the Desktop subsystem (issue #2) is not being built. Nothing here was implemented. The decision and its reasoning are kept intact for if computer infrastructure returns; the rationale below is unchanged.
+
 Computer-use Agents are driven by OpenAI's `computerTool` from the Agents SDK, executing against Orgo desktops through a small typed adapter we own. OpenAI is the agent brain, Orgo is the desktop runtime, and Arkitech owns everything in between.
 
 The decision rests on what Arkitech must own, not on what any vendor does or does not currently support. Arkitech owns the run loop, approvals, the Control Lease, pause and takeover, screenshot and event capture, credits, and resumable state. Any design that hands the loop to a third party puts those concerns outside our control, and they are the product. The Agents SDK supports `computerTool`, approval interruptions, and resumable `RunState`, which is what the rest of Arkitech is already built on, so `standard` and `computer` Agents share one agent abstraction, one SDK, and one set of tool-wiring tests.

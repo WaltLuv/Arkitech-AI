@@ -15,11 +15,11 @@ The in-memory OpenAI Agents SDK object built from an **Agent** at execution time
 _Avoid_: agent instance, live agent
 
 **Execution Mode**:
-Which runtime an **Agent** uses: `standard` (tools and chat only) or `computer` (drives a **Desktop**). A property of the Agent, not a tool it connects to.
+Which runtime an **Agent** uses. Only `standard` (tools and chat) exists today. The concept is kept because **Credit Cost** is priced by it, so a second mode can be added without reworking the ledger.
 _Avoid_: agent type, agent kind
 
 **Agent Slot**:
-One unit of a user's quota on how many **Agents** they may have. The quota is 3. Paused Agents occupy a slot; deleting an Agent frees one. Execution Mode does not change the cost.
+One unit of a user's quota on how many **Agents** they may have. The quota is 3. Paused Agents occupy a slot; deleting an Agent frees one.
 _Avoid_: agent credit (the DB column stays `agentCredits`), agent limit
 
 ### Running
@@ -55,7 +55,7 @@ One unit of a user's allowance to run an **Agent**. A credit buys a successful r
 _Avoid_: credit (unqualified, where an **Agent Slot** may be meant), token, quota
 
 **Credit Cost**:
-How many **Usage Credits** one **Run** was charged, recorded on the Run itself. Priced by **Execution Mode** and captured at acceptance, so later price changes never rewrite history.
+How many **Usage Credits** one **Run** was charged, recorded on the Run itself. Priced by **Execution Mode** and captured at acceptance, so later price changes never rewrite history. Today every Run costs 1.
 _Avoid_: price, run price
 
 **Credit Ledger**:
@@ -69,6 +69,12 @@ _Avoid_: transaction, row
 **Refund**:
 The return of a **Run**'s **Credit Cost** when it failed through platform, worker, provider, or agent fault, or was cancelled before execution began. Identical for scheduled and on-demand Runs, and issued at most once per Run.
 _Avoid_: credit back, reversal
+
+---
+
+## Deferred / Future Computer Infrastructure
+
+The terms below are **not current implementation requirements**. They were settled while specifying the Desktop subsystem in issue #2, which is deferred: Arkitech AI does not provision or depend on remote desktops. They are kept so the terminology is not lost if computer infrastructure returns later.
 
 ### Desktops
 
