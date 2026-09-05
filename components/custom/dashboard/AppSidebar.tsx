@@ -18,13 +18,12 @@ import { UserButton } from "@clerk/nextjs"
 import { AppWindow, Blocks, Bot, Layers, Play, Settings, User2 } from "lucide-react"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
-import { useContext } from "react"
+import { useContext, useState } from "react"
 
 export function AppSidebar() {
 
     const path = usePathname();
-    const { userDetail } = useContext(UserDetailContext);
-    const currentUser = Array.isArray(userDetail) ? userDetail[0] : userDetail;
+    const { userDetail, setUserDetail } = useContext(UserDetailContext);
     const router = useRouter();
     return (
         <Sidebar>
@@ -85,13 +84,13 @@ export function AppSidebar() {
             </SidebarContent>
             <SidebarFooter >
                 <div className="p-2 border rounded-lg flex gap-2 flex-col">
-                    <h2 className="flex justify-between">Agents <span>{currentUser?.agentCredits}/5</span></h2>
-                    <h2 className="flex justify-between">Credits <span>{currentUser?.usageCredits}</span></h2>
+                    <h2 className="flex justify-between">Agents <span>{userDetail?.agentCredits}/5</span></h2>
+                    <h2 className="flex justify-between">Credits <span>{userDetail?.usageCredits}</span></h2>
                     <Progress value={66} />
                 </div>
                 <div className="flex items-center p-2 mt-2 gap-2.5">
                     <UserButton />
-                    <span>{currentUser?.name}</span>
+                    <span>{userDetail?.name}</span>
                 </div>
             </SidebarFooter>
         </Sidebar>

@@ -6,12 +6,6 @@ import { composio } from "./composio";
 import { AgentConfig, db } from "@/db";
 import { eq } from "drizzle-orm";
 
-// Only the fields this module reads off a Composio connected account.
-type ConnectedAccount = {
-    id: string;
-    toolkit?: { slug?: string };
-};
-
 export async function getOrCreateAgentSession(agentConfig: CreatedAgentType, userEmail: string) {
 
     // Persisted session IDs let edits/runs reuse toolkit authorization state.
@@ -41,7 +35,7 @@ export const getActiveConnectedAccounts = async (userEmail: string, toolSlugs: s
     })
 
     // Composio expects connected account IDs grouped by toolkit slug.
-    return accounts.items.reduce((acc: Record<string, string[]>, account: ConnectedAccount) => {
+    return accounts.items.reduce((acc: Record<string, string[]>, account: any) => {
         const slug = account?.toolkit?.slug?.toLowerCase();
         if (slug && !acc[slug]) {
             acc[slug] = [account.id];
@@ -50,8 +44,9 @@ export const getActiveConnectedAccounts = async (userEmail: string, toolSlugs: s
     }, {})
 }
 
-const SaveComposioSessionId = async (agentId: string, session: { sessionId: string }) => {
-    await db.update(AgentConfig).set({
+const SaveComposioSessionId = async (agentId: string, session: any) => {
+    const result = await db.update(AgentConfig).set({
         composioSessionId: session.sessionId
     }).where(eq(AgentConfig.agentId, agentId));
+    console.log(result);
 }

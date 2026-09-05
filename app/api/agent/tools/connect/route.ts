@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     const agentConfig = await db.select().from(AgentConfig)
         .where(eq(AgentConfig.agentId, agentId));
 
-    //@ts-expect-error Composio's response type does not describe this field
+    //@ts-ignore
     const session = await getOrCreateAgentSession(agentConfig[0], user?.primaryEmailAddress?.emailAddress)
     const connectedAccounts = await getActiveConnectedAccounts(user?.primaryEmailAddress?.emailAddress ?? '', [toolSlug]);
 
@@ -51,7 +51,7 @@ export async function DELETE(req: NextRequest) {
     const toolKits = await session.toolkits();
 
 
-    const toolKit = toolKits.items.find((item: { slug: string }) => item.slug.toLowerCase() === toolSlug.toLowerCase());
+    const toolKit = toolKits.items.find((item: any) => item.slug.toLowerCase() === toolSlug.toLowerCase());
 
     // Delete the account connected to this agent session, not every account for the user.
     const sessionConnectedAccountId = toolKit?.connection?.connectedAccount?.id ?? null;

@@ -9,7 +9,6 @@ import { ArrowUp, BriefcaseBusiness, Loader2, Loader2Icon, Mail, Plus, Search } 
 import React, { useState } from 'react'
 import AIAgentQuestions from './AIAgentQuestions'
 import NewAgentCard from './NewAgentCard'
-import { getApiErrorMessage } from '@/lib/api-error';
 import { toast } from '@/components/ui/toast'
 
 const quickSuggestions = [
@@ -68,7 +67,7 @@ const templates = [
 type AgentConfigResp = {
     status: 'needs_clarification' | 'ready',
     clarificationQuestions: ClarificationQuestion[],
-    config: CreatedAgentType
+    config: any
 }
 
 export type ClarificationQuestion = {
@@ -89,7 +88,7 @@ export type CreatedAgentType = {
     description: string,
     instructions: string,
     objective: string,
-    tools: string[],
+    tools: any,
     skills: string[],
     schedule: AgentSchedule,
     outputFormat: string,
@@ -138,8 +137,8 @@ function CreateAgent() {
             if (result.data?.status_ == 'ready') {
                 setCreatedAgent(result.data);
             }
-        } catch (error) {
-            const message = getApiErrorMessage(error, 'Unable to create agent');
+        } catch (error: any) {
+            const message = error?.response?.data?.error || 'Unable to create agent';
             toast.add({
                 type: 'error',
                 title: message
@@ -150,7 +149,7 @@ function CreateAgent() {
     }
 
 
-    const onComplete = async (ans: Record<string, string | string[]>) => {
+    const onComplete = async (ans: any) => {
         console.log("OnComplete", ans);
         setConfigResult(null)
         const updatedPrompt = prompt + "\n" + JSON.stringify(ans);
@@ -163,8 +162,8 @@ function CreateAgent() {
             console.log("--", result.data);
             setConfigResult(result.data);
             setCreatedAgent(result.data);
-        } catch (error) {
-            const message = getApiErrorMessage(error, 'Unable to create agent');
+        } catch (error: any) {
+            const message = error?.response?.data?.error || 'Unable to create agent';
             toast.add({
                 type: 'error',
                 title: message
@@ -239,7 +238,7 @@ function CreateAgent() {
                 <div className='p-5 border rounded-2xl mt-5'>
                     <AIAgentQuestions
                         questionList={configResult.clarificationQuestions}
-                        onComplete={onComplete}
+                        onComplete={(resp: any) => onComplete(resp)}
                     />
                 </div>
 
@@ -251,7 +250,7 @@ function CreateAgent() {
 
 
             {createdAgent && <NewAgentCard createdAgent={createdAgent}
-                setUpdatedAgent={(value: CreatedAgentType | null) => setCreatedAgent(value)} />}
+                setUpdatedAgent={(value: CreatedAgentType) => setCreatedAgent(value)} />}
 
         </div>
     )

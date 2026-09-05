@@ -26,18 +26,18 @@ function SettingsPage() {
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        // `cancelled` stops a response that lands after unmount from writing state.
-        let cancelled = false
-        axios.get("/api/agent/configure")
-            .then((result) => {
-                if (!cancelled) setAgentCount((result.data as AgentSummary[]).length)
-            })
-            .finally(() => {
-                if (!cancelled) setLoading(false)
-            })
-        return () => { cancelled = true }
+        getAgentCount()
     }, [])
 
+    const getAgentCount = async () => {
+        try {
+            setLoading(true)
+            const result = await axios.get("/api/agent/configure")
+            setAgentCount((result.data as AgentSummary[]).length)
+        } finally {
+            setLoading(false)
+        }
+    }
 
     const usagePercent = Math.min((agentCount / DEMO_AGENT_LIMIT) * 100, 100)
 

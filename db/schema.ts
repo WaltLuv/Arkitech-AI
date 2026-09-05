@@ -40,7 +40,7 @@ export const tools = pgTable("tools", {
   // Provider-specific safety flags that can be evaluated before risky tool calls.
   approvalRules: jsonb("approval_rules").$type<Record<string, boolean>>(),
 
-  config: jsonb("config").$type<Record<string, unknown>>(),
+  config: jsonb("config").$type<Record<string, any>>(),
 
   riskLevel: varchar("risk_level", { length: 30 }).default("low"),
 

@@ -6,7 +6,6 @@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import axios from 'axios'
-import Image from "next/image"
 import React, { useEffect, useState } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -17,40 +16,28 @@ type ToolsType = {
     description: string,
     enabled: boolean,
     slug: string,
-    // The connected Composio account, absent until the tool is connected.
-    account?: { id: string }
+    account: any
 }
 
 function Integrations() {
 
     const [toolList, setToolList] = useState<ToolsType[]>();
-    // Starts true because the fetch below runs on mount.
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
+    useEffect(() => {
+        GetAllTools();
+    }, [])
 
-    // Refetch triggered by user actions, which may write state freely.
     const GetAllTools = async () => {
         setLoading(true);
         try {
             const result = await axios.get('/api/integrations');
+            console.log(result.data)
+
             setToolList(result.data);
         } finally {
             setLoading(false);
         }
     }
-
-    useEffect(() => {
-        // `cancelled` stops a response that lands after unmount from writing state.
-        let cancelled = false
-        axios.get('/api/integrations')
-            .then((result) => {
-                if (!cancelled) setToolList(result.data);
-            })
-            .finally(() => {
-                if (!cancelled) setLoading(false);
-            })
-        return () => { cancelled = true }
-    }, [])
-
 
     const connectTool = async (slug: string) => {
         setLoading(true);
@@ -87,7 +74,7 @@ function Integrations() {
                     <div className='p-3 border rounded-2xl' key={tool.slug ?? index}>
                         <div>
                             <div className='flex items-center justify-between'>
-                                <Image src={tool.icon} alt="" width={35} height={35} className='rounded-sm' />
+                                <img src={tool.icon} width={35} height={35} className='rounded-sm' />
                                 <Badge className={`text-xs ${tool.connected == 'Connected' ? 'text-green-700 bg-green-100' : 'text-gray-700 bg-gray-100'}`}>{tool.connected}</Badge>
                             </div>
                             <div className='mt-2'>
@@ -99,11 +86,11 @@ function Integrations() {
                             {tool.connected == 'Connected' ?
                                 <Button variant={'outline'} className={'w-full'}
                                     onClick={() => {
-                                        // Without an account id there is nothing to
-                                        // disconnect, and the API would 400.
+                                        // Without an account id there is nothing
+                                        // to disconnect, and the request 400s.
                                         if (tool?.account?.id) disconnectTool(tool.account.id)
                                     }}
-                                    disabled={loading || !tool?.account?.id}
+                                    disabled={loading}
                                 >Disconnect</Button> :
                                 <Button className={'w-full'}
                                     disabled={loading}

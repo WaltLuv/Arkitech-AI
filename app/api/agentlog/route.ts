@@ -4,9 +4,9 @@
 import { AgentConfig, AgentRun, db } from "@/db";
 import { currentUser } from "@clerk/nextjs/server";
 import { desc, eq } from "drizzle-orm";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
 
     const user = await currentUser();
 

@@ -218,7 +218,7 @@ If the objective mentions daily, recurring, schedule, or a time, treat that only
                         .filter(Boolean)
                         .join("\n\n"),
                     objective: agentConfig.objective ?? "",
-                    tools: Array.isArray(agentConfig.tools) ? (agentConfig.tools as string[]) : [],
+                    tools: agentConfig.tools,
                     skills: Array.isArray(agentConfig.skills)
                         ? (agentConfig.skills as string[])
                         : [],

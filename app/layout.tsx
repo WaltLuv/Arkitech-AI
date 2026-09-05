@@ -5,6 +5,7 @@ import { ClerkProvider } from '@clerk/nextjs';
 import "./globals.css";
 import type { Metadata } from "next";
 import { Figtree } from 'next/font/google'
+import axios from 'axios'
 import Provider from './provider';
 import { Toaster } from '@/components/ui/toast';
 export const metadata: Metadata = {
