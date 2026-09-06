@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
+import { UsageByAgent } from "@/components/custom/usage/UsageByAgent";
 import { UserDetailContext } from "@/context/UserDetailContext"
 import axios from "axios"
 import { Bell, Bot, CreditCard, Loader2, ShieldCheck } from "lucide-react"
@@ -92,6 +93,14 @@ function SettingsPage() {
                         description={`Current balance: ${currentUser?.usageCredits ?? 0} credits.`}
                     />
                 </div>
+            </section>
+
+            <section className="mt-8">
+                <h3 className="text-lg font-semibold">Usage by agent</h3>
+                <p className="mb-4 mt-1 text-sm text-muted-foreground">
+                    Credits spent per agent, with refunds already deducted.
+                </p>
+                <UsageByAgent />
             </section>
         </div>
     )
