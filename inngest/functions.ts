@@ -4,7 +4,7 @@
 import type { CreatedAgentType } from "@/components/custom/agents/CreateAgent";
 import { AgentConfig, AgentRun, db } from "@/db";
 import { calculateNextDailyRun } from "@/lib/agent-schedule";
-import { chargeRun, refundRun } from "@/lib/credits";
+import { chargeRun, isPaid, refundRun } from "@/lib/credits";
 import { executeAgent } from "@/lib/execute-agent";
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import { inngest } from "./client";
@@ -181,7 +181,9 @@ export const ExecuteScheduledAgent = inngest.createFunction(
                 }),
             );
 
-            if (!creditBalance) {
+            // A retried step reports already_charged. That Run is paid for, and
+            // treating it as "no credits" would fail a Run the user bought.
+            if (!isPaid(creditBalance)) {
                 await step.run(`mark-run-no-credits-${run.id}`, async () => {
                     await db
                         .update(AgentRun)

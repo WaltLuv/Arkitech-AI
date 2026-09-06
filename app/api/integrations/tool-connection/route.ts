@@ -15,7 +15,6 @@ export async function POST(req: NextRequest) {
 
     const connection = await composio.connectedAccounts.link(user?.primaryEmailAddress?.emailAddress ?? '', authConfig.id)
 
-    console.log(connection)
 
     return NextResponse.json({
         redirectUrl: connection.redirectUrl

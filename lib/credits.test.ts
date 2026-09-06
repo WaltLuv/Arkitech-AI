@@ -21,6 +21,7 @@ import {
     CREDIT_COST_BY_EXECUTION_MODE,
     chargeRun,
     creditCostFor,
+    isPaid,
     refundRun,
 } from "@/lib/credits";
 
@@ -75,7 +76,7 @@ describe("chargeRun", () => {
     it("returns the new balance when the charge succeeds", async () => {
         rows = [{ balance: 41 }];
 
-        await expect(chargeRun(movement)).resolves.toEqual({ balance: 41 });
+        await expect(chargeRun(movement)).resolves.toEqual({ outcome: "charged", balance: 41 });
     });
 
     it("returns null when the user cannot afford it, rather than throwing", async () => {
@@ -83,7 +84,7 @@ describe("chargeRun", () => {
         // charge simply matches no row and inserts nothing.
         rows = [];
 
-        await expect(chargeRun(movement)).resolves.toBeNull();
+        await expect(chargeRun(movement)).resolves.toEqual({ outcome: "insufficient" });
     });
 
     it("treats an already-charged Run as a no-op, not an error", async () => {
@@ -91,7 +92,17 @@ describe("chargeRun", () => {
         // This is what stops a retried queue step charging twice.
         thrown = duplicateKey;
 
-        await expect(chargeRun(movement)).resolves.toBeNull();
+        await expect(chargeRun(movement)).resolves.toEqual({ outcome: "already_charged" });
+    });
+
+    it("reports an already-charged Run as paid, not as out of credit", async () => {
+        // Conflating the two makes a retried worker step fail a Run the user
+        // has already paid for.
+        thrown = duplicateKey;
+        const result = await chargeRun(movement);
+
+        expect(isPaid(result)).toBe(true);
+        expect(isPaid({ outcome: "insufficient" })).toBe(false);
     });
 
     it("rethrows a genuine database error", async () => {
@@ -135,7 +146,7 @@ describe("refundRun", () => {
     it("returns the restored balance", async () => {
         rows = [{ balance: 42 }];
 
-        await expect(refundRun(refund)).resolves.toEqual({ balance: 42 });
+        await expect(refundRun(refund)).resolves.toEqual({ outcome: "refunded", balance: 42 });
     });
 
     it("refunds a Run at most once", async () => {
@@ -143,7 +154,7 @@ describe("refundRun", () => {
         // aborts the second statement and the increment rolls back with it.
         thrown = duplicateKey;
 
-        await expect(refundRun(refund)).resolves.toBeNull();
+        await expect(refundRun(refund)).resolves.toEqual({ outcome: "already_refunded" });
     });
 
     it("records the reason it was issued", async () => {

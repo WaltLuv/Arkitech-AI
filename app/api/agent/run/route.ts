@@ -8,7 +8,7 @@
  */
 import { AgentConfig, AgentRun, db } from "@/db";
 import { inngest } from "@/inngest/client";
-import { chargeRun, creditCostFor, refundRun } from "@/lib/credits";
+import { chargeRun, creditCostFor, isPaid, refundRun } from "@/lib/credits";
 import { executeAgent } from "@/lib/execute-agent";
 import { currentUser } from "@clerk/nextjs/server";
 import type { CreatedAgentType } from "@/components/custom/agents/CreateAgent";
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
             cost,
         });
 
-        if (!charged) {
+        if (!isPaid(charged)) {
             await db.delete(AgentRun).where(eq(AgentRun.id, run.id));
             return NextResponse.json({ error: 'Insufficient credit balance.' }, { status: 402 })
         }
@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
         cost,
     });
 
-    if (!charged) {
+    if (!isPaid(charged)) {
         await db.delete(AgentRun).where(eq(AgentRun.id, chatRun.id));
         return NextResponse.json({ error: 'Insufficient credit balance.' }, { status: 402 })
     }

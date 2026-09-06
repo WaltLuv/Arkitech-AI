@@ -95,7 +95,6 @@ export async function POST(req: NextRequest) {
                     timezone: timezone
                 }) : null
 
-            console.log("firstRun", firstRun);
             if (firstRun) {
                 const runInsert = await db.insert(AgentRun)
                     .values({
@@ -105,7 +104,6 @@ export async function POST(req: NextRequest) {
                         timezone: timezone,
                         status: 'scheduled',
                     }).returning();
-                console.log(runInsert)
             }
 
 
@@ -146,7 +144,6 @@ export async function PUT(req: NextRequest) {
         ))
             .returning();
 
-        console.log(result[0]);
         // Remove stale future occurrences before creating a replacement schedule.
         const deleteScheduledAgentRun = await db.delete(AgentRun)
             .where(and(eq(AgentRun.agentId, agentConfig?.agentId), eq(AgentRun.status, 'scheduled')))

@@ -44,6 +44,25 @@ const isDuplicate = (error: unknown) =>
     error !== null &&
     (error as { code?: string }).code === "23505";
 
+/**
+ * A charge has three distinct outcomes, and callers must tell them apart.
+ * Collapsing "already charged" into "insufficient" makes a retried worker step
+ * fail a Run that was in fact paid for.
+ */
+export type ChargeResult =
+    | { outcome: "charged"; balance: number }
+    | { outcome: "already_charged" }
+    | { outcome: "insufficient" };
+
+export type RefundResult =
+    | { outcome: "refunded"; balance: number }
+    | { outcome: "already_refunded" };
+
+/** True when the Run is paid for, however it got that way. */
+export function isPaid(result: ChargeResult): boolean {
+    return result.outcome === "charged" || result.outcome === "already_charged";
+}
+
 type Movement = {
     userEmail: string;
     agentId: string | null;
@@ -54,9 +73,8 @@ type Movement = {
 /**
  * Charge a Run at acceptance.
  *
- * Returns the new balance, or null when the user cannot afford it. Null is also
- * returned when this Run was already charged, so a retry is a no-op rather than
- * a second debit.
+ * A retry is a no-op rather than a second debit, and reports `already_charged`
+ * so the caller can tell it apart from the user being out of credit.
  *
  * The guard lives in the UPDATE's WHERE clause, so a balance can never go
  * negative however many Runs are accepted at once. If the ledger insert then
@@ -69,7 +87,7 @@ export async function chargeRun({
     agentId,
     runId,
     cost,
-}: Movement): Promise<{ balance: number } | null> {
+}: Movement): Promise<ChargeResult> {
     try {
         const result = await db.execute(sql`
             WITH deducted AS (
@@ -90,10 +108,14 @@ export async function chargeRun({
         `);
 
         const row = result.rows?.[0] as { balance?: number } | undefined;
-        return row?.balance == null ? null : { balance: Number(row.balance) };
+
+        // No row means the guard matched nothing: the user cannot afford it.
+        return row?.balance == null
+            ? { outcome: "insufficient" }
+            : { outcome: "charged", balance: Number(row.balance) };
     } catch (error) {
         // Already charged. The decrement rolled back with the failed insert.
-        if (isDuplicate(error)) return null;
+        if (isDuplicate(error)) return { outcome: "already_charged" };
         throw error;
     }
 }
@@ -111,7 +133,7 @@ export async function refundRun({
     runId,
     cost,
     reason,
-}: Movement & { reason: RefundReason }): Promise<{ balance: number } | null> {
+}: Movement & { reason: RefundReason }): Promise<RefundResult> {
     try {
         const result = await db.execute(sql`
             WITH restored AS (
@@ -131,10 +153,13 @@ export async function refundRun({
         `);
 
         const row = result.rows?.[0] as { balance?: number } | undefined;
-        return row?.balance == null ? null : { balance: Number(row.balance) };
+
+        return row?.balance == null
+            ? { outcome: "already_refunded" }
+            : { outcome: "refunded", balance: Number(row.balance) };
     } catch (error) {
         // Already refunded. The increment rolled back with the failed insert.
-        if (isDuplicate(error)) return null;
+        if (isDuplicate(error)) return { outcome: "already_refunded" };
         throw error;
     }
 }

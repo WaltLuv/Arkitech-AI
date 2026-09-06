@@ -21,11 +21,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ 'error': 'Unauthorized User' }, { status: 400 })
     }
 
-    const agentConfig = await db.select().from(AgentConfig)
-        .where(eq(AgentConfig.agentId, agentId));
-
+    // Reuse the row ownership already resolved, rather than re-reading it
+    // unscoped.
     //@ts-ignore
-    const session = await getOrCreateAgentSession(agentConfig[0], user?.primaryEmailAddress?.emailAddress)
+    const session = await getOrCreateAgentSession(ownership.agent, user?.primaryEmailAddress?.emailAddress)
     const connectedAccounts = await getActiveConnectedAccounts(user?.primaryEmailAddress?.emailAddress ?? '', [toolSlug]);
 
     // Reuse an existing active account when the user has already connected this toolkit.
