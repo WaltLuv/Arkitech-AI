@@ -277,9 +277,37 @@ export const browserSession = pgTable(
 );
 
 
+/**
+ * Browser execution slots. One row per concurrently permitted session.
+ *
+ * Capacity is structural rather than counted: there are only as many rows as
+ * the limit allows, so no amount of concurrency can produce an extra active
+ * session. This is deliberate. The Agent Slot work established that counting
+ * and then deciding cannot hold an invariant here, and that neither an advisory
+ * lock nor SELECT FOR UPDATE fixes it, because the count reads a snapshot taken
+ * before the lock is acquired.
+ */
+export const browserSlot = pgTable(
+  "browserSlot",
+  {
+    slotIndex: integer("slot_index").primaryKey(),
+
+    // Null when free. Holding it is what consumes capacity.
+    browserRunId: uuid("browser_run_id"),
+
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  },
+  table => [
+    // A run can occupy at most one slot.
+    uniqueIndex("browser_slot_run").on(table.browserRunId),
+  ],
+);
+
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type CreditLedgerEntry = typeof creditLedger.$inferSelect;
 export type NewCreditLedgerEntry = typeof creditLedger.$inferInsert;
 export type BrowserRun = typeof browserRun.$inferSelect;
 export type BrowserSession = typeof browserSession.$inferSelect;
+export type BrowserSlot = typeof browserSlot.$inferSelect;
