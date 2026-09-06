@@ -10,7 +10,7 @@ import { currentUser } from "@clerk/nextjs/server";
 import { and, count, desc, eq } from "drizzle-orm";
 import { loadOwnedAgent } from "@/lib/agent-ownership";
 import { calculateNextDailyRun } from "@/lib/agent-schedule";
-import { agentSlotLimitMessage, hasAgentSlotAvailable } from "@/lib/agent-slots";
+import { agentSlotLimitMessage, createAgentWithinQuota } from "@/lib/agent-slots";
 
 export async function POST(req: NextRequest) {
 
@@ -30,17 +30,9 @@ export async function POST(req: NextRequest) {
 
     try {
 
-        // Every non-deleted Agent occupies a slot, paused ones included.
-        const agentCount = await db.select({ value: count() })
-            .from(AgentConfig)
-            .where(eq(AgentConfig.userEmail, userEmail));
-
-        if (!hasAgentSlotAvailable(agentCount[0]?.value ?? 0)) {
-            return NextResponse.json(
-                { error: agentSlotLimitMessage() },
-                { status: 403 }
-            )
-        }
+        // No pre-check here. The quota is enforced atomically at the insert
+        // below, because a count followed by an insert lets two concurrent
+        // requests at 2 agents both succeed.
 
         // Send only the tool metadata Gemini needs for planning; credentials and
         // connected-account details stay server-side.
@@ -74,18 +66,38 @@ export async function POST(req: NextRequest) {
 
         if (aiOutput.status == 'ready') {
             const agentId = crypto.randomUUID();
-            const dbResult = await db.insert(AgentConfig).values({
-                ...aiOutput.config,
+
+            // Columns are listed explicitly rather than spread from the model
+            // output, so generated content cannot set fields it has no business
+            // setting. The quota is enforced inside this one statement.
+            const created = await createAgentWithinQuota({
+                userEmail,
+                agentId,
                 agentImage: 'https://api.dicebear.com/10.x/gaze/svg?tags=animation&seed=' + agentId,
-                agentId: agentId,
-                userEmail: userEmail,
+                name: aiOutput?.config?.name ?? null,
+                description: aiOutput?.config?.description ?? null,
+                instructions: aiOutput?.config?.instructions ?? null,
+                objective: aiOutput?.config?.objective ?? null,
+                tools: aiOutput?.config?.tools ?? null,
+                skills: aiOutput?.config?.skills ?? null,
+                outputFormat: aiOutput?.config?.outputFormat ?? null,
+                status: aiOutput?.config?.status ?? 'active',
                 schedule: {
-                    time: aiOutput?.config?.schedule.time,
-                    type: aiOutput?.config?.schedule.type,
-                    frequency: aiOutput?.config?.schedule.frequency,
+                    time: aiOutput?.config?.schedule?.time,
+                    type: aiOutput?.config?.schedule?.type,
+                    frequency: aiOutput?.config?.schedule?.frequency,
                     timezone: timezone
                 }
-            }).returning();
+            });
+
+            if (!created) {
+                return NextResponse.json(
+                    { error: agentSlotLimitMessage() },
+                    { status: 403 }
+                )
+            }
+
+            const dbResult = [created];
 
             // Pre-create the first scheduled occurrence so Inngest can pick it up.
             const schedule = aiOutput?.config?.schedule;

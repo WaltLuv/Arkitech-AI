@@ -70,8 +70,14 @@ export const AgentConfig = pgTable("agentConfig", {
   outputFormat: text('outputFormat'),
   status: varchar('status').default('active'),// Active, Pause
   composioSessionId: varchar('composioSessionId'),
+  // Which Agent Slot this Agent occupies, 0-based. The unique index below is
+  // what actually caps a user at AGENT_SLOT_QUOTA agents: locks cannot, because
+  // a count reads the snapshot taken before the lock was acquired.
+  slotIndex: integer('slot_index'),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-})
+}, table => [
+  uniqueIndex("agent_config_user_slot").on(table.userEmail, table.slotIndex),
+])
 
 export const AgentRun = pgTable(
   "agentRun",

@@ -15,6 +15,13 @@
       "when": 1788638600638,
       "tag": "0001_opening_balance",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788638600639,
+      "tag": "0002_agent_slot_index",
+      "breakpoints": true
     }
   ]
 }
