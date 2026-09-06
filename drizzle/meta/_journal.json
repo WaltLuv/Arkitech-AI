@@ -22,6 +22,13 @@
       "when": 1788638600639,
       "tag": "0002_agent_slot_index",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788733795417,
+      "tag": "0003_browser_foundation",
+      "breakpoints": true
     }
   ]
 }

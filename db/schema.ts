@@ -193,7 +193,93 @@ export const creditLedger = pgTable(
 );
 
 
+/**
+ * A unit of browser work Arkitech owns. The provider supplies the browser; this
+ * row is the thing Arkitech schedules, authorises, cancels and reports on.
+ */
+export const browserRun = pgTable(
+  "browserRun",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    userEmail: text("email").notNull(),
+    agentId: varchar("agentId").notNull(),
+
+    // The Arkitech Run this browser work belongs to, when it was started by one.
+    runId: uuid("runId"),
+
+    task: text("task").notNull(),
+
+    // queued | claimed | running | completed | failed | cancelled
+    status: varchar("status", { length: 20 }).default("queued").notNull(),
+
+    // urgent sorts before normal. Never used to bypass approvals or to seize
+    // control from an active controller.
+    priority: varchar("priority", { length: 10 }).default("normal").notNull(),
+
+    // Set the moment cancellation is requested, so a queued run can never be
+    // claimed afterwards.
+    cancelRequestedAt: timestamp("cancel_requested_at", { withTimezone: true }),
+
+    attempt: integer("attempt").default(0).notNull(),
+
+    // Identifies the worker holding the claim, so a stale claim is recognisable.
+    claimedBy: varchar("claimed_by", { length: 100 }),
+
+    failureReason: text("failure_reason"),
+
+    queuedAt: timestamp("queued_at", { withTimezone: true }).defaultNow().notNull(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  table => [
+    // The queue read: pending work, highest priority first, then oldest.
+    index("browser_run_queue").on(table.status, table.priority, table.queuedAt),
+    index("browser_run_owner").on(table.userEmail, table.queuedAt),
+  ],
+);
+
+/**
+ * A provider session backing one browser run.
+ *
+ * `creationKey` is written before the provider is called, so a create whose
+ * outcome is unknown can be reconciled against the provider rather than
+ * retried, which would create a second paid browser.
+ */
+export const browserSession = pgTable(
+  "browserSession",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    browserRunId: uuid("browser_run_id").notNull(),
+    userEmail: text("email").notNull(),
+
+    creationKey: varchar("creation_key", { length: 100 }).notNull(),
+
+    browserbaseSessionId: varchar("browserbase_session_id", { length: 120 }),
+    browserbaseContextId: varchar("browserbase_context_id", { length: 120 }),
+
+    // pending | running | released | errored | timed_out | unknown
+    status: varchar("status", { length: 20 }).default("pending").notNull(),
+
+    // not_requested | requested | released | failed
+    releaseState: varchar("release_state", { length: 20 }).default("not_requested").notNull(),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+  },
+  table => [
+    // One session per creation attempt. Reconciliation depends on this.
+    uniqueIndex("browser_session_creation_key").on(table.creationKey),
+    index("browser_session_run").on(table.browserRunId),
+  ],
+);
+
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type CreditLedgerEntry = typeof creditLedger.$inferSelect;
 export type NewCreditLedgerEntry = typeof creditLedger.$inferInsert;
+export type BrowserRun = typeof browserRun.$inferSelect;
+export type BrowserSession = typeof browserSession.$inferSelect;
