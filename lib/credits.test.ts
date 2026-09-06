@@ -1,106 +1,174 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Records the update chain so each test can assert on the query that was built
-// without standing up a database. `returning` resolves to whatever the test
-// queues in `rows`.
-const chain = {
-    set: vi.fn(() => chain),
-    where: vi.fn(() => chain),
-    returning: vi.fn(async () => rows),
-    // refundUsageCredit awaits the builder directly, with no .returning().
-    then: (resolve: (value: unknown) => unknown) => resolve(rows),
-};
+// One captured SQL execution per call. The interesting assertions are what the
+// statement did, so the fake returns rows and records what it was asked.
+let rows: Array<{ balance: number }> = [];
+let thrown: unknown = null;
+type SqlArg = { queryChunks?: unknown[] };
 
-let rows: unknown[] = [];
-
-const update = vi.fn(() => chain);
+// vi.mock's factory is hoisted above the module body, so the spy has to be
+// hoisted with it. Its behaviour is set per test in beforeEach.
+const { execute } = vi.hoisted(() => ({
+    execute: vi.fn<(query: SqlArg) => Promise<{ rows: Array<{ balance: number }> }>>(),
+}));
 
 vi.mock("@/db", () => ({
-    db: { update: () => update() },
-    users: { email: "users.email", usageCredits: "users.usageCredits" },
+    db: { execute },
+    users: { email: "users.email" },
 }));
 
-// Operators are recorded as plain descriptors. The point of these tests is the
-// shape of the guard we build, not Drizzle's SQL generation.
-vi.mock("drizzle-orm", () => ({
-    and: (...conditions: unknown[]) => ({ op: "and", conditions }),
-    eq: (column: unknown, value: unknown) => ({ op: "eq", column, value }),
-    gt: (column: unknown, value: unknown) => ({ op: "gt", column, value }),
-    sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({
-        op: "sql",
-        text: strings.raw.join("?"),
-        values,
-    }),
-}));
+import {
+    CREDIT_COST_BY_EXECUTION_MODE,
+    chargeRun,
+    creditCostFor,
+    refundRun,
+} from "@/lib/credits";
 
-import { deductUsageCredit, refundUsageCredit } from "@/lib/credits";
+const movement = {
+    userEmail: "someone@example.com",
+    agentId: "ag-1",
+    runId: "11111111-2222-3333-4444-555555555555",
+    cost: 1,
+};
 
-describe("deductUsageCredit", () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-        rows = [{ usageCredits: 41 }];
-    });
+const duplicateKey = Object.assign(new Error("duplicate key"), { code: "23505" });
 
-    it("returns the updated balance when a credit was deducted", async () => {
-        await expect(deductUsageCredit("someone@example.com")).resolves.toEqual({
-            usageCredits: 41,
-        });
-    });
+/** The SQL as written, with bound parameters inlined, for readable assertions. */
+const statement = () => {
+    const arg: SqlArg = execute.mock.calls[0]?.[0] ?? {};
+    return (arg.queryChunks ?? [])
+        .map(chunk => {
+            if (chunk && typeof chunk === "object" && "value" in chunk) {
+                return (chunk as { value: string[] }).value.join("");
+            }
+            return String(chunk);
+        })
+        .join("");
+};
 
-    it("returns null when no row matched, rather than undefined", async () => {
-        // No row matches once the balance is already 0, because of the gt guard.
-        // Callers branch on null, so undefined would be a silent bug.
-        rows = [];
-
-        await expect(deductUsageCredit("broke@example.com")).resolves.toBeNull();
-    });
-
-    it("guards the deduction so a balance can never go negative", async () => {
-        await deductUsageCredit("someone@example.com");
-
-        // The whole point of doing this in the WHERE clause is atomicity: a
-        // read-then-write would race between concurrent runs.
-        expect(chain.where).toHaveBeenCalledWith({
-            op: "and",
-            conditions: [
-                { op: "eq", column: "users.email", value: "someone@example.com" },
-                { op: "gt", column: "users.usageCredits", value: 0 },
-            ],
-        });
-    });
-
-    it("decrements by exactly one, in SQL rather than in JS", async () => {
-        await deductUsageCredit("someone@example.com");
-
-        expect(chain.set).toHaveBeenCalledWith({
-            usageCredits: { op: "sql", text: "? - 1", values: ["users.usageCredits"] },
-        });
+beforeEach(() => {
+    vi.clearAllMocks();
+    rows = [];
+    thrown = null;
+    execute.mockImplementation(async () => {
+        if (thrown) throw thrown;
+        return { rows };
     });
 });
 
-describe("refundUsageCredit", () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
+describe("creditCostFor", () => {
+    it("prices a standard Run at 1", () => {
+        expect(creditCostFor("standard")).toBe(1);
+    });
+
+    it("defaults to standard", () => {
+        expect(creditCostFor()).toBe(1);
+    });
+
+    it("reads the price from configuration rather than assuming it", () => {
+        // Nothing may hard-code 1. A future mode is added here, not in the ledger.
+        expect(Object.keys(CREDIT_COST_BY_EXECUTION_MODE)).toEqual(["standard"]);
+    });
+});
+
+describe("chargeRun", () => {
+    it("returns the new balance when the charge succeeds", async () => {
+        rows = [{ balance: 41 }];
+
+        await expect(chargeRun(movement)).resolves.toEqual({ balance: 41 });
+    });
+
+    it("returns null when the user cannot afford it, rather than throwing", async () => {
+        // The guard lives in the statement's WHERE clause, so an unaffordable
+        // charge simply matches no row and inserts nothing.
         rows = [];
+
+        await expect(chargeRun(movement)).resolves.toBeNull();
     });
 
-    it("increments the balance by one", async () => {
-        await refundUsageCredit("someone@example.com");
+    it("treats an already-charged Run as a no-op, not an error", async () => {
+        // The unique key aborts the statement, taking the decrement with it.
+        // This is what stops a retried queue step charging twice.
+        thrown = duplicateKey;
 
-        expect(chain.set).toHaveBeenCalledWith({
-            usageCredits: { op: "sql", text: "? + 1", values: ["users.usageCredits"] },
-        });
+        await expect(chargeRun(movement)).resolves.toBeNull();
     });
 
-    it("matches on email alone, with no balance guard", async () => {
-        // A refund must apply even when the balance is 0, which is exactly the
-        // state a failed run leaves behind.
-        await refundUsageCredit("someone@example.com");
+    it("rethrows a genuine database error", async () => {
+        thrown = Object.assign(new Error("connection lost"), { code: "08006" });
 
-        expect(chain.where).toHaveBeenCalledWith({
-            op: "eq",
-            column: "users.email",
-            value: "someone@example.com",
-        });
+        await expect(chargeRun(movement)).rejects.toThrow("connection lost");
+    });
+
+    it("guards the balance so it can never go negative", async () => {
+        rows = [{ balance: 0 }];
+
+        await chargeRun(movement);
+
+        expect(statement()).toContain('"ussageCredits" >= ');
+    });
+
+    it("records the movement as a debit against the Run and Agent", async () => {
+        rows = [{ balance: 3 }];
+
+        await chargeRun(movement);
+
+        const sql = statement();
+        expect(sql).toContain("creditLedger");
+        expect(sql).toContain("debit");
+        expect(sql).toContain("run_accepted");
+        expect(sql).toContain(`charge:${movement.runId}`);
+    });
+
+    it("charges the Run's own cost rather than a hard-coded 1", async () => {
+        rows = [{ balance: 90 }];
+
+        await chargeRun({ ...movement, cost: 7 });
+
+        expect(statement()).toContain("7");
+    });
+});
+
+describe("refundRun", () => {
+    const refund = { ...movement, reason: "worker_failure" as const };
+
+    it("returns the restored balance", async () => {
+        rows = [{ balance: 42 }];
+
+        await expect(refundRun(refund)).resolves.toEqual({ balance: 42 });
+    });
+
+    it("refunds a Run at most once", async () => {
+        // A retried worker step must not hand back two credits. The unique key
+        // aborts the second statement and the increment rolls back with it.
+        thrown = duplicateKey;
+
+        await expect(refundRun(refund)).resolves.toBeNull();
+    });
+
+    it("records the reason it was issued", async () => {
+        rows = [{ balance: 42 }];
+
+        await refundRun({ ...refund, reason: "cancelled_before_execution" });
+
+        expect(statement()).toContain("cancelled_before_execution");
+    });
+
+    it("applies no balance guard, so a refund works at zero", async () => {
+        // A failed Run often leaves the balance at 0. That is exactly when the
+        // refund has to work.
+        rows = [{ balance: 1 }];
+
+        await refundRun(refund);
+
+        const sql = statement();
+        expect(sql).toContain('"ussageCredits" + ');
+        expect(sql).not.toContain('"ussageCredits" >= ');
+    });
+
+    it("rethrows a genuine database error", async () => {
+        thrown = Object.assign(new Error("connection lost"), { code: "08006" });
+
+        await expect(refundRun(refund)).rejects.toThrow("connection lost");
     });
 });

@@ -4,7 +4,7 @@
 import type { CreatedAgentType } from "@/components/custom/agents/CreateAgent";
 import { AgentConfig, AgentRun, db } from "@/db";
 import { calculateNextDailyRun } from "@/lib/agent-schedule";
-import { deductUsageCredit } from "@/lib/credits";
+import { chargeRun, refundRun } from "@/lib/credits";
 import { executeAgent } from "@/lib/execute-agent";
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import { inngest } from "./client";
@@ -168,10 +168,17 @@ export const ExecuteScheduledAgent = inngest.createFunction(
                 };
             }
 
-            // Step 5: Deduct one credit for this execution.
+            // Step 5: Charge this execution against the Run, so the ledger can
+            // attribute the spend. Safe to retry: the idempotency key collapses a
+            // repeated step into one debit.
             const creditBalance = await step.run(
                 `deduct-credit-${run.id}`,
-                async () => deductUsageCredit(run.userEmail),
+                async () => chargeRun({
+                    userEmail: run.userEmail,
+                    agentId: run.agentId,
+                    runId: run.id,
+                    cost: run.creditCost,
+                }),
             );
 
             if (!creditBalance) {
@@ -316,6 +323,19 @@ If the objective mentions daily, recurring, schedule, or a time, treat that only
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : "Unknown error";
+
+            // Step 10a: Refund. This path previously charged and never gave the
+            // credit back, so the same failure cost a credit when scheduled and
+            // nothing when run on demand. Issued at most once per Run.
+            await step.run(`refund-run-${run.id}`, async () => {
+                await refundRun({
+                    userEmail: run.userEmail,
+                    agentId: run.agentId,
+                    runId: run.id,
+                    cost: run.creditCost,
+                    reason: "worker_failure",
+                });
+            });
 
             // Step 10: Persist failures so the run does not stay stuck as queued/running.
             await step.run(`mark-run-failed-${run.id}`, async () => {
