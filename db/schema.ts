@@ -304,6 +304,89 @@ export const browserSlot = pgTable(
 );
 
 
+/**
+ * The activity trail Arkitech owns, independent of the provider.
+ *
+ * Ordered by a per-run sequence rather than by timestamp, so ordering survives
+ * clock skew between workers.
+ */
+export const browserEvent = pgTable(
+  "browserEvent",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    browserRunId: uuid("browser_run_id").notNull(),
+    userEmail: text("email").notNull(),
+    browserSessionId: uuid("browser_session_id"),
+
+    sequence: integer("sequence").notNull(),
+
+    // queued | claimed | started | session_created | navigation |
+    // action_proposed | action_executed | approval_requested |
+    // approval_resolved | screenshot | file_downloaded | file_uploaded |
+    // paused | takeover_requested | human_control | agent_control_restored |
+    // warning | failed | cancelled | verification | completed |
+    // session_released
+    kind: varchar("kind", { length: 40 }).notNull(),
+
+    // agent | human | system. Who caused it, not who is described by it.
+    actor: varchar("actor", { length: 20 }).notNull(),
+    actorId: varchar("actor_id", { length: 200 }),
+
+    // Safe structured metadata only. Never reasoning, credentials, cookies, or
+    // any writable capability URL; lib/browserbase/activity.ts refuses those.
+    detail: jsonb("detail"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  table => [
+    // One sequence number per run: two writers cannot claim the same position.
+    uniqueIndex("browser_event_run_sequence").on(table.browserRunId, table.sequence),
+    index("browser_event_owner").on(table.userEmail, table.createdAt),
+  ],
+);
+
+/**
+ * Durable evidence. A provider URL is a pointer to someone else's storage with
+ * its own retention; an artifact is bytes Arkitech holds and can verify.
+ */
+export const browserArtifact = pgTable(
+  "browserArtifact",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    browserRunId: uuid("browser_run_id").notNull(),
+    userEmail: text("email").notNull(),
+    agentId: varchar("agentId"),
+    browserSessionId: uuid("browser_session_id"),
+
+    // screenshot | download | generated | recording
+    source: varchar("source", { length: 20 }).notNull(),
+
+    filename: varchar("filename", { length: 400 }),
+    mimeType: varchar("mime_type", { length: 120 }),
+    sizeBytes: integer("size_bytes"),
+
+    // sha256 of the stored bytes. Absent until the bytes are actually held.
+    checksum: varchar("checksum", { length: 100 }),
+
+    // Key in Arkitech-controlled private storage.
+    storageKey: varchar("storage_key", { length: 500 }),
+
+    // pending | stored | verified | missing | failed
+    verificationState: varchar("verification_state", { length: 20 })
+      .default("pending")
+      .notNull(),
+
+    // retained | expired
+    retentionState: varchar("retention_state", { length: 20 }).default("retained").notNull(),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  table => [index("browser_artifact_run").on(table.browserRunId, table.createdAt)],
+);
+
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type CreditLedgerEntry = typeof creditLedger.$inferSelect;
@@ -311,3 +394,5 @@ export type NewCreditLedgerEntry = typeof creditLedger.$inferInsert;
 export type BrowserRun = typeof browserRun.$inferSelect;
 export type BrowserSession = typeof browserSession.$inferSelect;
 export type BrowserSlot = typeof browserSlot.$inferSelect;
+export type BrowserEvent = typeof browserEvent.$inferSelect;
+export type BrowserArtifact = typeof browserArtifact.$inferSelect;
