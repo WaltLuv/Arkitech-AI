@@ -8,6 +8,7 @@ import { AgentConfigRespSchema } from "@/data/ResponseSchema";
 import { AgentConfig, AgentRun, db, tools } from "@/db";
 import { currentUser } from "@clerk/nextjs/server";
 import { and, count, desc, eq } from "drizzle-orm";
+import { loadOwnedAgent } from "@/lib/agent-ownership";
 import { calculateNextDailyRun } from "@/lib/agent-schedule";
 import { agentSlotLimitMessage, hasAgentSlotAvailable } from "@/lib/agent-slots";
 
@@ -124,13 +125,25 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
     const agentConfig = await req.json();
 
-    console.log(agentConfig);
+    const user = await currentUser();
+    const userEmail = user?.primaryEmailAddress?.emailAddress ?? '';
+
+    // Previously this updated by agentId alone, so any signed-in user could
+    // edit any Agent.
+    const ownership = await loadOwnedAgent(agentConfig?.agentId, userEmail);
+    if (!ownership.ok) {
+        return NextResponse.json({ error: ownership.error }, { status: ownership.status })
+    }
 
     try {
         const result = await db.update(AgentConfig).set({
             ...agentConfig,
+            userEmail: ownership.agent.userEmail,
             createdAt: new Date()
-        }).where(eq(AgentConfig.agentId, agentConfig?.agentId))
+        }).where(and(
+            eq(AgentConfig.agentId, ownership.agent.agentId),
+            eq(AgentConfig.userEmail, userEmail),
+        ))
             .returning();
 
         console.log(result[0]);
@@ -179,12 +192,25 @@ export async function GET(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
     const { agentId } = await req.json();
 
-    try {
-        const deleteAgentRun = await db.delete(AgentRun)
-            .where(and(eq(AgentRun.agentId, agentId)))
+    const user = await currentUser();
+    const userEmail = user?.primaryEmailAddress?.emailAddress ?? '';
 
-        const deleteAgentConfig = await db.delete(AgentConfig)
-            .where(eq(AgentConfig.agentId, agentId));
+    // This handler previously had no authentication at all: any caller could
+    // delete any Agent, and its runs, by id.
+    const ownership = await loadOwnedAgent(agentId, userEmail);
+    if (!ownership.ok) {
+        return NextResponse.json({ error: ownership.error }, { status: ownership.status })
+    }
+
+    try {
+        await db.delete(AgentRun)
+            .where(and(eq(AgentRun.agentId, ownership.agent.agentId), eq(AgentRun.userEmail, userEmail)))
+
+        await db.delete(AgentConfig)
+            .where(and(
+                eq(AgentConfig.agentId, ownership.agent.agentId),
+                eq(AgentConfig.userEmail, userEmail),
+            ));
 
 
         return NextResponse.json({ msg: 'Agent Deleted!' }, { status: 200 })

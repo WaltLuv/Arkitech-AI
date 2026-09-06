@@ -3,6 +3,7 @@
  */
 import { AgentConfig, db } from "@/db";
 import { getOrCreateAgentSession } from "@/lib/get-agent-composio-session";
+import { loadOwnedAgent } from "@/lib/agent-ownership";
 import { currentUser } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
@@ -17,10 +18,13 @@ export async function GET(req: NextRequest) {
     }
 
     // Fetch the saved allowed tool slugs before asking Composio for live status.
-    const result = await db.select().from(AgentConfig)
-        .where(eq(AgentConfig.agentId, agentId ?? ''));
+    // Scoped to the caller: an agentId alone is not authorisation.
+    const ownership = await loadOwnedAgent(agentId, user?.primaryEmailAddress?.emailAddress ?? '');
+    if (!ownership.ok) {
+        return NextResponse.json({ error: ownership.error }, { status: ownership.status })
+    }
 
-    const agentConfig = result[0];
+    const agentConfig = ownership.agent;
     const allowedTools: any = agentConfig?.tools;
     //@ts-ignore
     const session = await getOrCreateAgentSession(agentConfig, user?.primaryEmailAddress?.emailAddress)

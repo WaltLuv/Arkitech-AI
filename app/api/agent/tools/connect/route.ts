@@ -4,6 +4,7 @@
 import { AgentConfig, db } from "@/db";
 import { composio } from "@/lib/composio";
 import { getActiveConnectedAccounts, getOrCreateAgentSession } from "@/lib/get-agent-composio-session";
+import { loadOwnedAgent } from "@/lib/agent-ownership";
 import { currentUser } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
@@ -11,6 +12,10 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(req: NextRequest) {
     const { toolSlug, agentId } = await req.json();
     const user = await currentUser();
+    const ownership = await loadOwnedAgent(agentId, user?.primaryEmailAddress?.emailAddress ?? '');
+    if (!ownership.ok) {
+        return NextResponse.json({ error: ownership.error }, { status: ownership.status })
+    }
 
     if (!user) {
         return NextResponse.json({ 'error': 'Unauthorized User' }, { status: 400 })
@@ -40,11 +45,15 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
     const { toolSlug, agentId } = await req.json();
 
-    console.log(toolSlug, agentId);
-    const result = await db.select().from(AgentConfig)
-        .where(eq(AgentConfig.agentId, agentId));
+    // This handler previously had no authentication: any caller could
+    // disconnect a tool from any Agent by id.
+    const user = await currentUser();
+    const ownership = await loadOwnedAgent(agentId, user?.primaryEmailAddress?.emailAddress ?? '');
+    if (!ownership.ok) {
+        return NextResponse.json({ error: ownership.error }, { status: ownership.status })
+    }
 
-    const compositonSessionId = result[0].composioSessionId;
+    const compositonSessionId = ownership.agent.composioSessionId;
 
     const session = await composio.use(compositonSessionId ?? '')
 
