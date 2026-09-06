@@ -9,8 +9,7 @@ import { AgentConfig, AgentRun, db, tools } from "@/db";
 import { currentUser } from "@clerk/nextjs/server";
 import { and, count, desc, eq } from "drizzle-orm";
 import { calculateNextDailyRun } from "@/lib/agent-schedule";
-
-const DEMO_AGENT_LIMIT = 5;
+import { agentSlotLimitMessage, hasAgentSlotAvailable } from "@/lib/agent-slots";
 
 export async function POST(req: NextRequest) {
 
@@ -30,13 +29,14 @@ export async function POST(req: NextRequest) {
 
     try {
 
+        // Every non-deleted Agent occupies a slot, paused ones included.
         const agentCount = await db.select({ value: count() })
             .from(AgentConfig)
             .where(eq(AgentConfig.userEmail, userEmail));
 
-        if ((agentCount[0]?.value ?? 0) >= DEMO_AGENT_LIMIT) {
+        if (!hasAgentSlotAvailable(agentCount[0]?.value ?? 0)) {
             return NextResponse.json(
-                { error: `Demo app limit reached. You can create max ${DEMO_AGENT_LIMIT} agents.` },
+                { error: agentSlotLimitMessage() },
                 { status: 403 }
             )
         }

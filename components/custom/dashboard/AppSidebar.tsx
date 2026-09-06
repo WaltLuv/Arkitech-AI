@@ -13,18 +13,36 @@ import {
     SidebarHeader,
     SidebarMenuButton,
 } from "@/components/ui/sidebar"
+import { AGENT_SLOT_QUOTA } from "@/lib/agent-slots";
 import { UserDetailContext } from "@/context/UserDetailContext"
 import { UserButton } from "@clerk/nextjs"
 import { AppWindow, Blocks, Bot, Layers, Play, Settings, User2 } from "lucide-react"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
-import { useContext, useState } from "react"
+import axios from "axios"
+import { useContext, useEffect, useState } from "react"
 
 export function AppSidebar() {
 
     const path = usePathname();
     const { userDetail, setUserDetail } = useContext(UserDetailContext);
     const router = useRouter();
+
+    // The slot counter shows how many Agents exist, not the agentCredits
+    // column, which is never decremented and would show a new user as full.
+    const [agentCount, setAgentCount] = useState<number | null>(null);
+
+    useEffect(() => {
+        let cancelled = false
+        axios.get("/api/agent/configure")
+            .then((result) => {
+                if (!cancelled) setAgentCount(Array.isArray(result.data) ? result.data.length : 0)
+            })
+            .catch(() => {
+                if (!cancelled) setAgentCount(null)
+            })
+        return () => { cancelled = true }
+    }, [path]);
     return (
         <Sidebar>
             <SidebarHeader className="flex flex-row gap-2.5 items-center px-4 py-4" >
@@ -84,7 +102,7 @@ export function AppSidebar() {
             </SidebarContent>
             <SidebarFooter >
                 <div className="p-2 border rounded-lg flex gap-2 flex-col">
-                    <h2 className="flex justify-between">Agents <span>{userDetail?.agentCredits}/5</span></h2>
+                    <h2 className="flex justify-between">Agents <span>{agentCount ?? "-"}/{AGENT_SLOT_QUOTA}</span></h2>
                     <h2 className="flex justify-between">Credits <span>{userDetail?.usageCredits}</span></h2>
                     <Progress value={66} />
                 </div>
