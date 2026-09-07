@@ -86,6 +86,27 @@ async function provider<T>(label: string, work: () => Promise<T>): Promise<T> {
     }
 }
 
+
+/**
+ * Writes a controlled page, from a settled starting point.
+ *
+ * The guard's second line sends a refused page to about:blank, and it does so
+ * from a framenavigated handler rather than in step with the caller. That
+ * recovery can therefore land while the next thing is writing content, which
+ * destroys the execution context mid-write. Going to about:blank first makes
+ * the starting point explicit, and one retry absorbs a recovery that was
+ * already in flight.
+ */
+async function writePage(html: string): Promise<void> {
+    await page!.goto("about:blank", { waitUntil: "load", timeout: 15_000 }).catch(() => undefined);
+    try {
+        await page!.setContent(html, { waitUntil: "load", timeout: 15_000 });
+    } catch (error) {
+        if (!/Execution context was destroyed/i.test(String((error as Error).message))) throw error;
+        await page!.setContent(html, { waitUntil: "load", timeout: 15_000 });
+    }
+}
+
 describe.skipIf(!live)("live Browserbase session", () => {
     beforeAll(async () => {
         expect(isBrowserbaseConfigured(), "BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID must both be set").toBe(true);
@@ -160,27 +181,9 @@ describe.skipIf(!live)("live Browserbase session", () => {
         expect(jpeg[jpeg.byteLength - 1]).toBe(0xd9);
     }, 90_000);
 
-    it("blocks a metadata endpoint by Arkitech's own guard, on a real request", async () => {
-        blocked.length = 0;
-
-        await page!.goto(METADATA_URL, { waitUntil: "domcontentloaded", timeout: 15_000 }).catch(() => undefined);
-
-        // Arkitech's verdict, named. A provider that happened to refuse the
-        // route as well would not produce this: only our guard records it.
-        const ours = blocked.find(b => b.url.includes("169.254.169.254"));
-        expect(ours, "Arkitech's guard must be the thing that refused it").toBeDefined();
-        expect(ours!.reason).toBe("metadata_endpoint");
-
-        // And the evaluator agrees, independently of what the network did.
-        expect(evaluateUrl(METADATA_URL, { allowPublic: true, allowedHosts: [] }))
-            .toMatchObject({ allowed: false, reason: "metadata_endpoint" });
-
-        expect(page!.url()).not.toContain("169.254.169.254");
-    }, 90_000);
-
     it("lands a mapped desktop click on the exact pixel it was mapped to", async () => {
         // A page this test writes, so a click cannot follow a link anywhere.
-        await page!.setContent(`
+        await writePage(`
             <body style="margin:0">
               <div id="pad" style="width:100vw;height:100vh"></div>
               <script>
@@ -204,7 +207,7 @@ describe.skipIf(!live)("live Browserbase session", () => {
     }, 90_000);
 
     it("types real text and presses a real key into a real page", async () => {
-        await page!.setContent(`<body style="margin:0"><input id="field" /></body>`);
+        await writePage(`<body style="margin:0"><input id="field" /></body>`);
         await page!.focus("#field");
 
         const text = mapClientAction({ type: "text", text: "arkitech" }, AGENT_VIEWPORT, AGENT_VIEWPORT);
@@ -222,7 +225,7 @@ describe.skipIf(!live)("live Browserbase session", () => {
     }, 90_000);
 
     it("scrolls a real page from a phone-sized touch pan", async () => {
-        await page!.setContent(`<body style="margin:0"><div style="height:5000px">tall</div></body>`);
+        await writePage(`<body style="margin:0"><div style="height:5000px">tall</div></body>`);
         expect(await page!.evaluate(() => window.scrollY)).toBe(0);
 
         // A finger dragged up by 200 rendered pixels on a 360-wide phone view.
@@ -269,6 +272,27 @@ describe.skipIf(!live)("live Browserbase session", () => {
         expect(stillHasScheme, "a websocket scheme survived redaction").toBe(false);
         expect(stillHasKey, "the API key survived redaction").toBe(false);
         expect(redacted).toContain("[redacted");
+    }, 90_000);
+
+    // Deliberately after the input tests. Blocking navigates the page to
+    // about:blank as a second line, asynchronously, and that recovery landing
+    // mid-write is what broke the click test on the first live run.
+    it("blocks a metadata endpoint by Arkitech's own guard, on a real request", async () => {
+        blocked.length = 0;
+
+        await page!.goto(METADATA_URL, { waitUntil: "domcontentloaded", timeout: 15_000 }).catch(() => undefined);
+
+        // Arkitech's verdict, named. A provider that happened to refuse the
+        // route as well would not produce this: only our guard records it.
+        const ours = blocked.find(b => b.url.includes("169.254.169.254"));
+        expect(ours, "Arkitech's guard must be the thing that refused it").toBeDefined();
+        expect(ours!.reason).toBe("metadata_endpoint");
+
+        // And the evaluator agrees, independently of what the network did.
+        expect(evaluateUrl(METADATA_URL, { allowPublic: true, allowedHosts: [] }))
+            .toMatchObject({ allowed: false, reason: "metadata_endpoint" });
+
+        expect(page!.url()).not.toContain("169.254.169.254");
     }, 90_000);
 
     it("recorded the navigations it allowed", async () => {
