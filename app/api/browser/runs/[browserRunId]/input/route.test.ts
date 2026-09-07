@@ -170,6 +170,15 @@ describe("POST /api/browser/runs/[id]/input", () => {
             .toBeLessThan(mocks.dispatchAction.mock.invocationCallOrder[0]);
     });
 
+    it("installs a guard that reports what it blocks", async () => {
+        // ensureSessionGuard installs one only when the process has none, so a
+        // silent guard would leave the trail empty for exactly the connections
+        // nothing else is watching.
+        await POST(request(validBody), { params });
+
+        expect(mocks.ensureSessionGuard).toHaveBeenCalledWith("bb-1", expect.objectContaining({ report: true }));
+    });
+
     it("refuses the action if the site guard cannot be installed", async () => {
         mocks.ensureSessionGuard.mockRejectedValue(new Error("policy unavailable"));
 

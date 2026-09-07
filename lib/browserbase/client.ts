@@ -4,16 +4,17 @@
  * Two rules this file exists to enforce:
  *
  * 1. Credentials come from the environment, never from a caller.
- * 2. Writable capabilities never leave the server. sessions.debug() returns
+ * 2. Writable capabilities are never obtained at all. sessions.debug() returns
  *    debuggerUrl, debuggerFullscreenUrl and wsUrl, and every one of them grants
  *    full control of the browser. The SDK offers no read-only variant.
  *
  *    They do carry a TTL (SessionDebugParams.timeout, up to 6 hours, otherwise
  *    expiring with the session), but a TTL is not revocation: a URL already
  *    copied stays usable until it lapses, and cannot be withdrawn when control
- *    changes hands. So these are returned only to server code that has already
- *    checked a control lease, and are never placed in an event, an artifact, a
- *    log line, or a response body.
+ *    changes hands. Rather than hold something that cannot be taken back, this
+ *    module simply never asks for one. The only capability it touches is the
+ *    session's connect URL, read inside driver.ts for the duration of one CDP
+ *    connection and never stored, logged, or returned.
  */
 import Browserbase from "@browserbasehq/sdk";
 import { missingConfigMessage, readBrowserbaseConfig } from "./config";
@@ -98,19 +99,17 @@ export async function releaseSession(sessionId: string) {
     return bb.sessions.update(sessionId, { projectId, status: "REQUEST_RELEASE" });
 }
 
-export async function createContext() {
-    const { bb, projectId } = client();
-    return bb.contexts.create({ projectId });
-}
-
-/**
- * Live view URLs. Every one of these is writable.
+/*
+ * Deliberately absent: a wrapper around sessions.debug().
  *
- * Callers must treat the result as a secret: it is never returned to a browser,
- * logged, or written to an event or artifact row. It exists so server code can
- * mediate a view after checking who holds control.
+ * It returns debuggerUrl, debuggerFullscreenUrl and wsUrl, every one of which
+ * grants full control of the browser and none of which can be revoked once
+ * handed out. Watching is served instead by server-captured frames, and human
+ * input by the mediated input route, so nothing in Arkitech needs those URLs
+ * and no function here can be called by mistake to obtain one.
+ *
+ * Persistent Contexts are absent for the same reason they are unused: nothing
+ * creates or reuses one, so no cookie jar or browser profile is shared between
+ * runs or between users. Adding them is a deliberate feature with an ownership
+ * design of its own, not a wrapper waiting to be called.
  */
-export async function getWritableLiveUrls(sessionId: string, ttlSeconds?: number) {
-    const { bb } = client();
-    return bb.sessions.debug(sessionId, ttlSeconds ? { timeout: ttlSeconds } : undefined);
-}

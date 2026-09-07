@@ -81,8 +81,31 @@ beforeEach(() => {
 });
 
 describe("loadOwnedBrowserRun", () => {
-    it("refuses a malformed id before querying", async () => {
-        expect(await loadOwnedBrowserRun("not-a-uuid", OWNER)).toBeNull();
+    it("accepts a real uuid", async () => {
+        expect(await loadOwnedBrowserRun(RUN_ID, OWNER)).toEqual(runningRun);
+    });
+
+    it("refuses anything that is not a uuid, so no malformed id reaches the database", async () => {
+        // A failed uuid cast is a 500 where a 404 belongs, which tells the
+        // caller their guess was differently wrong. "-" repeated 36 times is
+        // the case a length-and-charset check lets through.
+        const malformed = [
+            "not-a-uuid",
+            "-".repeat(36),
+            "11111111-1111-1111-1111-11111111111",
+            "11111111-1111-1111-1111-1111111111111",
+            "gggggggg-1111-1111-1111-111111111111",
+            "11111111111111111111111111111111",
+            `${RUN_ID} OR 1=1`,
+            "",
+        ];
+
+        for (const id of malformed) {
+            expect(await loadOwnedBrowserRun(id, OWNER)).toBeNull();
+        }
+    });
+
+    it("refuses when there is no caller", async () => {
         expect(await loadOwnedBrowserRun(RUN_ID, "")).toBeNull();
     });
 });

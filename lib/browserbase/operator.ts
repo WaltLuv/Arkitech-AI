@@ -22,6 +22,8 @@ import { requestCancellation } from "./queue";
 
 export type OwnedBrowserRun = typeof browserRun.$inferSelect;
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * A missing run and another user's run look the same, for the same reason
  * Agent ownership works that way: telling them apart leaks which ids exist.
@@ -31,7 +33,10 @@ export async function loadOwnedBrowserRun(
     userEmail: string,
 ): Promise<OwnedBrowserRun | null> {
     if (!browserRunId || !userEmail) return null;
-    if (!/^[0-9a-f-]{36}$/i.test(browserRunId)) return null;
+    // Strict, not merely 36 characters of hex and dashes: a malformed id that
+    // reaches the database is a failed uuid cast, and a 500 where a 404 belongs
+    // tells the caller their guess was differently wrong.
+    if (!UUID.test(browserRunId)) return null;
 
     const rows = await db
         .select()

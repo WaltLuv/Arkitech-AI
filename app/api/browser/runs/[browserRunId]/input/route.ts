@@ -67,7 +67,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ browse
     try {
         // A person's connection is policed the same way the agent's is.
         await ensureSessionGuard(session.browserbaseSessionId, {
-            browserRunId: run.id, userEmail, agentId: run.agentId, sessionRecordId: session.id, report: false,
+            browserRunId: run.id, userEmail, agentId: run.agentId, sessionRecordId: session.id, report: true,
         });
         viewport = await currentViewport(session.browserbaseSessionId);
     } catch (error) {

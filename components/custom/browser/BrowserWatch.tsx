@@ -346,6 +346,13 @@ export function BrowserWatch({ browserRunId }: { browserRunId: string }) {
 
             {notice && <p className="text-sm text-amber-700">{notice}</p>}
 
+            {run.cancelRequested && run.status !== "cancelled" && (
+                <p className="text-sm text-amber-700">
+                    Stopping. Arkitech will issue nothing further and will release the browser.
+                    Anything already submitted to a website has happened and is not undone by stopping.
+                </p>
+            )}
+
             <div className={`relative rounded-xl border overflow-hidden bg-slate-950 ${inControl ? "ring-2 ring-blue-500" : ""}`}>
                 {isLive && frameUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element

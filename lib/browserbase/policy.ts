@@ -65,7 +65,12 @@ export type GuardTarget = {
     userEmail: string;
     agentId: string;
     sessionRecordId: string | null;
-    /** The worker's guard reports and captures; an operator route's does neither. */
+    /**
+     * Whether this guard records what it blocks and captures what is
+     * downloaded. Normally true: `ensureSessionGuard` installs a guard only
+     * when the process has none, so a silent one would leave the trail empty
+     * for exactly the connections nothing else is watching.
+     */
     report: boolean;
 };
 

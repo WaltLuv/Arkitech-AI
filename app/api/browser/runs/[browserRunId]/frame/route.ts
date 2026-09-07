@@ -37,7 +37,7 @@ export async function GET(_req: NextRequest, context: { params: Promise<{ browse
         // This process may not be the worker's. Its connection enforces the
         // same policy, silently, before a single frame is taken.
         await ensureSessionGuard(session.browserbaseSessionId, {
-            browserRunId: run.id, userEmail, agentId: run.agentId, sessionRecordId: session.id, report: false,
+            browserRunId: run.id, userEmail, agentId: run.agentId, sessionRecordId: session.id, report: true,
         });
         const frame = await captureFrame(session.browserbaseSessionId);
 
