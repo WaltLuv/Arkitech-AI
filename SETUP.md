@@ -91,3 +91,29 @@ npm run db:generate   # generate migrations
 npm run db:studio     # open Drizzle Studio
 npx tsc --noEmit      # typecheck
 ```
+
+## Live Browserbase verification
+
+The browser subsystem is proven offline by the normal suite. One suite,
+`lib/browserbase/live.test.ts`, checks the parts only a real provider can
+answer: that the credentials work, that a session is created and driven over
+CDP, that the site guard blocks a real request, that mapped input lands where
+it was mapped, and that the session is released afterwards.
+
+It creates one real, billable session, so it is skipped unless asked for.
+
+Locally, with credentials in `.env.local` (gitignored, never committed):
+
+```bash
+set -a && . ./.env.local && set +a
+LIVE_BROWSERBASE=1 npx vitest run lib/browserbase/live.test.ts
+```
+
+In CI, run the **Browserbase Live Verification** workflow from the Actions tab.
+It is `workflow_dispatch` only, so no push, pull request or schedule can ever
+start a billable session. It reads two repository secrets,
+`BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID`, releases any session left
+behind even if the job is cancelled, and scrubs its log before keeping it.
+
+`OPENAI_API_KEY` is passed through if set but the live suite does not use it.
+No database is needed: the suite imports nothing that touches Postgres.

@@ -4,19 +4,33 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * Live verification against a real Browserbase session.
  *
  * Everything else in this directory proves behaviour offline. This file proves
- * the parts that only a real provider can answer: that the credentials work,
- * that a session can be created and driven over CDP, that site policy actually
- * blocks a real request, that input actually lands, and that the session is
- * actually released afterwards.
+ * the parts only a real provider can answer: that the credentials work, that a
+ * session is created and driven over CDP, that Arkitech's own site guard blocks
+ * a real request, that mapped input actually lands where it was mapped, and
+ * that the session is actually released afterwards.
  *
- * It costs money, so it is skipped unless asked for, and it creates exactly one
- * session and releases it in afterAll whatever happens.
+ * It costs money, so it is skipped unless asked for. It creates exactly one
+ * session and releases it in teardown whatever happens, including when an
+ * assertion fails or setup dies part-way through.
  *
  *     set -a && . ./.env.local && set +a
  *     LIVE_BROWSERBASE=1 npx vitest run lib/browserbase/live.test.ts
  *
- * The database is deliberately untouched: this is about the provider, and
- * requiring DATABASE_URL would make a provider check fail for the wrong reason.
+ * Two rules govern everything below.
+ *
+ * First, no secret may reach the output. A failing `expect(a).not.toContain(b)`
+ * prints both operands, so any assertion about the connect URL is made on a
+ * boolean computed beforehand, never on the URL itself. Provider errors are
+ * redacted before they are allowed to propagate, because an unhandled SDK error
+ * in CI prints straight to the log.
+ *
+ * Second, nothing consequential happens. The only external page fetched is
+ * example.com, which exists to be fetched. Input is exercised against pages
+ * this test writes itself, so a click cannot follow a link, submit a form, or
+ * reach anyone's account.
+ *
+ * The database is deliberately untouched. This is a check on the provider, and
+ * requiring DATABASE_URL would let it fail for the wrong reason.
  */
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { createSession, isBrowserbaseConfigured, releaseSession, retrieveSession } from "./client";
@@ -27,35 +41,75 @@ import { evaluateUrl, type DenyReason } from "./site-policy";
 
 const live = process.env.LIVE_BROWSERBASE === "1";
 
-/** A public page that is stable, tiny, and safe to click around on. */
+/** A public page that exists to be fetched. Nothing here is consequential. */
 const ALLOWED_URL = "https://example.com/";
 /** The address every cloud provider exposes internally. Must never load. */
 const METADATA_URL = "http://169.254.169.254/latest/meta-data/";
+
+const PROVIDER_TIMEOUT_MS = 60_000;
+const CONNECT_TIMEOUT_MS = 30_000;
+const NAV_TIMEOUT_MS = 30_000;
 
 let sessionId = "";
 let browser: Browser | null = null;
 let context: BrowserContext | null = null;
 let page: Page | null = null;
+let connectUrlSeen = false;
 
 const blocked: Array<{ url: string; reason: DenyReason; stage: string }> = [];
 const navigated: string[] = [];
 
+/** Nothing waits forever, including a provider call the SDK would let hang. */
+function withTimeout<T>(work: Promise<T>, label: string, ms = PROVIDER_TIMEOUT_MS): Promise<T> {
+    return Promise.race([
+        work,
+        new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`${label} did not finish within ${ms}ms`)), ms).unref?.(),
+        ),
+    ]);
+}
+
+/**
+ * Every provider call goes through here. An SDK error can carry the request
+ * URL, and the request URL carries the API key; letting one propagate raw
+ * would print it into the CI log.
+ */
+async function provider<T>(label: string, work: () => Promise<T>): Promise<T> {
+    try {
+        return await withTimeout(work(), label);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const status = (error as { status?: number }).status;
+        throw new Error(
+            `${label} failed${status ? ` with status ${status}` : ""}: ${redactCapabilities(message).slice(0, 300)}`,
+        );
+    }
+}
+
 describe.skipIf(!live)("live Browserbase session", () => {
     beforeAll(async () => {
-        expect(isBrowserbaseConfigured(), "BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID must be set").toBe(true);
+        expect(isBrowserbaseConfigured(), "BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID must both be set").toBe(true);
 
-        const created = await createSession({ creationKey: `arkitech-live-${Date.now()}` });
+        // Assigned before anything else can throw, so teardown always has an
+        // id to release even if the steps below fail.
+        const created = await provider("createSession", () =>
+            createSession({ creationKey: `arkitech-live-${Date.now()}` }));
         sessionId = created.id;
 
-        const record = await retrieveSession(sessionId);
-        expect(record.connectUrl, "the provider must return a connect URL").toBeTruthy();
+        const record = await provider("retrieveSession", () => retrieveSession(sessionId));
+        const connectUrl = String(record.connectUrl ?? "");
+        connectUrlSeen = connectUrl.length > 0;
+        expect(connectUrlSeen, "the provider must return a connect URL").toBe(true);
 
-        browser = await chromium.connectOverCDP(record.connectUrl as string, { timeout: 30_000 });
-        context = browser.contexts()[0];
-        expect(context, "the session must expose a browser context").toBeTruthy();
+        browser = await provider("connectOverCDP", () =>
+            chromium.connectOverCDP(connectUrl, { timeout: CONNECT_TIMEOUT_MS }));
+
+        context = browser.contexts()[0] ?? null;
+        expect(context, "the session must expose a browser context").not.toBeNull();
 
         // The same guard the worker installs, with a policy that allows public
-        // sites. Private ranges are refused by the policy itself, not by a rule.
+        // sites. Private ranges are refused by the policy itself, not by a rule,
+        // so this configuration cannot accidentally permit the metadata test.
         const guard = new SiteGuard(
             { allowPublic: true, allowedHosts: [] },
             {
@@ -68,66 +122,89 @@ describe.skipIf(!live)("live Browserbase session", () => {
         await guard.attach(context as unknown as Parameters<SiteGuard["attach"]>[0]);
 
         page = context!.pages().find(p => !p.isClosed()) ?? (await context!.newPage());
+        page.setDefaultTimeout(NAV_TIMEOUT_MS);
         await page.setViewportSize(AGENT_VIEWPORT);
-    }, 120_000);
+    }, 180_000);
 
     afterAll(async () => {
         // Release first and always: an unreleased session keeps costing money.
         if (browser) await browser.close().catch(() => undefined);
+
         if (sessionId) {
-            await releaseSession(sessionId).catch(() => undefined);
+            const released = await releaseSession(sessionId).then(() => true).catch(() => false);
             const after = await retrieveSession(sessionId).catch(() => null);
-            // Reported rather than asserted: release is a request, and the
-            // provider may still be tearing down when this runs.
-            console.log(`[live] session ${sessionId} final status: ${after?.status ?? "unknown"}`);
+            // Reported, not asserted: release is a request, and the provider
+            // may still be tearing down when this runs. The session id is an
+            // identifier, not a capability; it is useless without the API key.
+            console.log(
+                `[live] session ${sessionId}: release requested=${released}, provider status=${after?.status ?? "unknown"}`,
+            );
         }
-    }, 120_000);
+    }, 180_000);
 
     it("loads a permitted public page", async () => {
-        await page!.goto(ALLOWED_URL, { waitUntil: "domcontentloaded", timeout: 30_000 });
+        await page!.goto(ALLOWED_URL, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
 
         expect(page!.url()).toContain("example.com");
         expect(await page!.title()).toBeTruthy();
-    }, 60_000);
+    }, 90_000);
 
-    it("captures a real screenshot the server can serve as a frame", async () => {
+    it("captures a real screenshot whose bytes are actually a JPEG", async () => {
         const jpeg = await page!.screenshot({ type: "jpeg", quality: 60, fullPage: false });
 
-        // A real JPEG, not an empty buffer or an error page of zero bytes.
         expect(jpeg.byteLength).toBeGreaterThan(1000);
+        // SOI marker, and the EOI marker that only a complete JPEG carries.
         expect(jpeg[0]).toBe(0xff);
         expect(jpeg[1]).toBe(0xd8);
-    }, 60_000);
+        expect(jpeg[jpeg.byteLength - 2]).toBe(0xff);
+        expect(jpeg[jpeg.byteLength - 1]).toBe(0xd9);
+    }, 90_000);
 
-    it("blocks a metadata endpoint on a real request, not just in the evaluator", async () => {
+    it("blocks a metadata endpoint by Arkitech's own guard, on a real request", async () => {
         blocked.length = 0;
 
         await page!.goto(METADATA_URL, { waitUntil: "domcontentloaded", timeout: 15_000 }).catch(() => undefined);
 
-        // The evaluator's verdict, and the guard's behaviour on a live request.
-        expect(evaluateUrl(METADATA_URL, { allowPublic: true, allowedHosts: [] })).toMatchObject({ allowed: false });
-        expect(blocked.some(b => b.url.includes("169.254.169.254"))).toBe(true);
+        // Arkitech's verdict, named. A provider that happened to refuse the
+        // route as well would not produce this: only our guard records it.
+        const ours = blocked.find(b => b.url.includes("169.254.169.254"));
+        expect(ours, "Arkitech's guard must be the thing that refused it").toBeDefined();
+        expect(ours!.reason).toBe("metadata_endpoint");
+
+        // And the evaluator agrees, independently of what the network did.
+        expect(evaluateUrl(METADATA_URL, { allowPublic: true, allowedHosts: [] }))
+            .toMatchObject({ allowed: false, reason: "metadata_endpoint" });
+
         expect(page!.url()).not.toContain("169.254.169.254");
-    }, 60_000);
+    }, 90_000);
 
-    it("accepts a desktop click mapped from a rendered frame", async () => {
-        await page!.goto(ALLOWED_URL, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    it("lands a mapped desktop click on the exact pixel it was mapped to", async () => {
+        // A page this test writes, so a click cannot follow a link anywhere.
+        await page!.setContent(`
+            <body style="margin:0">
+              <div id="pad" style="width:100vw;height:100vh"></div>
+              <script>
+                window.__click = null;
+                document.getElementById("pad").addEventListener("click", e => {
+                  window.__click = { x: e.clientX, y: e.clientY, button: e.button };
+                });
+              </script>
+            </body>`);
 
-        // A click at the centre of a 640x400 rendering of a 1280x800 viewport.
-        const mapped = mapClientAction(
-            { type: "click", x: 320, y: 200 },
-            { width: 640, height: 400 },
-            AGENT_VIEWPORT,
-        );
+        // The centre of a 640x400 rendering of the 1280x800 agent viewport.
+        const mapped = mapClientAction({ type: "click", x: 320, y: 200 }, { width: 640, height: 400 }, AGENT_VIEWPORT);
         expect(mapped.ok).toBe(true);
         if (!mapped.ok) return;
         expect(mapped.action).toMatchObject({ type: "click", x: 640, y: 400 });
 
         await performAction(page!, mapped.action);
-    }, 60_000);
 
-    it("types real text and presses real keys into a real page", async () => {
-        await page!.setContent(`<input id="field" autofocus />`);
+        const landed = await page!.evaluate(() => (window as unknown as { __click: unknown }).__click);
+        expect(landed).toEqual({ x: 640, y: 400, button: 0 });
+    }, 90_000);
+
+    it("types real text and presses a real key into a real page", async () => {
+        await page!.setContent(`<body style="margin:0"><input id="field" /></body>`);
         await page!.focus("#field");
 
         const text = mapClientAction({ type: "text", text: "arkitech" }, AGENT_VIEWPORT, AGENT_VIEWPORT);
@@ -142,9 +219,9 @@ describe.skipIf(!live)("live Browserbase session", () => {
         if (key.ok) await performAction(page!, key.action);
 
         expect(await page!.inputValue("#field")).toBe("arkitec");
-    }, 60_000);
+    }, 90_000);
 
-    it("scrolls a real page from a touch pan", async () => {
+    it("scrolls a real page from a phone-sized touch pan", async () => {
         await page!.setContent(`<body style="margin:0"><div style="height:5000px">tall</div></body>`);
         expect(await page!.evaluate(() => window.scrollY)).toBe(0);
 
@@ -158,7 +235,7 @@ describe.skipIf(!live)("live Browserbase session", () => {
 
         await page!.waitForFunction(() => window.scrollY > 0, undefined, { timeout: 10_000 });
         expect(await page!.evaluate(() => window.scrollY)).toBeGreaterThan(0);
-    }, 60_000);
+    }, 90_000);
 
     it("resizes a real browser to a phone-shaped viewport and back", async () => {
         const resize = mapClientAction({ type: "resize", width: 390, height: 844 }, AGENT_VIEWPORT, AGENT_VIEWPORT);
@@ -169,20 +246,33 @@ describe.skipIf(!live)("live Browserbase session", () => {
 
         await page!.setViewportSize(AGENT_VIEWPORT);
         expect(page!.viewportSize()).toEqual(AGENT_VIEWPORT);
-    }, 60_000);
+    }, 90_000);
 
-    it("has a connect URL that would be redacted if it ever escaped", async () => {
-        const record = await retrieveSession(sessionId);
+    it("redacts the session's own real connect URL and API key", async () => {
+        const record = await provider("retrieveSession", () => retrieveSession(sessionId));
         const connectUrl = String(record.connectUrl ?? "");
+        const apiKey = process.env.BROWSERBASE_API_KEY ?? "";
 
-        expect(connectUrl).toBeTruthy();
-        // The real URL, through the real redactor: no websocket URL survives.
-        expect(redactCapabilities(`failed at ${connectUrl}`)).not.toContain(connectUrl);
-        expect(redactCapabilities(`failed at ${connectUrl}`)).not.toMatch(/wss?:\/\//);
-        expect(redactCapabilities(`failed at ${connectUrl}`)).not.toContain(process.env.BROWSERBASE_API_KEY ?? "@@none@@");
-    }, 60_000);
+        expect(connectUrl.length, "the provider must return a connect URL").toBeGreaterThan(0);
+        expect(apiKey.length, "the API key must be present to prove it is redacted").toBeGreaterThan(0);
 
-    it("records the navigations it allowed", async () => {
+        const redacted = redactCapabilities(`connect failed at ${connectUrl}`);
+
+        // Every assertion below is on a boolean computed here. Passing the URL
+        // or the key into expect() would print it on failure, which is the one
+        // way this test could leak the thing it exists to protect.
+        const stillHasUrl = redacted.includes(connectUrl);
+        const stillHasScheme = /wss?:\/\//.test(redacted);
+        const stillHasKey = redacted.includes(apiKey);
+
+        expect(stillHasUrl, "the connect URL survived redaction").toBe(false);
+        expect(stillHasScheme, "a websocket scheme survived redaction").toBe(false);
+        expect(stillHasKey, "the API key survived redaction").toBe(false);
+        expect(redacted).toContain("[redacted");
+    }, 90_000);
+
+    it("recorded the navigations it allowed", async () => {
+        expect(connectUrlSeen).toBe(true);
         expect(navigated.some(url => url.includes("example.com"))).toBe(true);
-    }, 60_000);
+    }, 90_000);
 });

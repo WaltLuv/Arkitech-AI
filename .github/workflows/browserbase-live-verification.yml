@@ -1,0 +1,112 @@
+name: Browserbase Live Verification
+
+# Manual only. Every run creates a real, billable Browserbase session, so this
+# must never fire on push, on pull_request, or on a schedule.
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Why this run is happening (recorded in the log)
+        required: false
+        default: Manual live verification
+
+permissions:
+  contents: read
+
+# One at a time, and never cancel a run mid-flight: a cancelled job skips the
+# test's own teardown, which is what releases the session.
+concurrency:
+  group: browserbase-live-verification
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Live provider verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Secrets reach the process only as environment variables, and only here.
+    # Nothing below echoes them, and the log is scrubbed before it is kept.
+    env:
+      BROWSERBASE_API_KEY: ${{ secrets.BROWSERBASE_API_KEY }}
+      BROWSERBASE_PROJECT_ID: ${{ secrets.BROWSERBASE_PROJECT_ID }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LIVE_BROWSERBASE: "1"
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # npm with the repo's lockfile. The repo's .npmrc sets legacy-peer-deps,
+      # without which a clean install fails on a stale peer range.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check the secrets are present
+        run: |
+          missing=0
+          for name in BROWSERBASE_API_KEY BROWSERBASE_PROJECT_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Required secret $name is not set on this repository."
+              missing=1
+            else
+              echo "$name is set (value hidden)."
+            fi
+          done
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "OPENAI_API_KEY is not set. The live suite does not use it; continuing."
+          else
+            echo "OPENAI_API_KEY is set (unused by the live suite)."
+          fi
+          exit $missing
+
+      # playwright-core connects to the remote browser Browserbase provides, so
+      # no browser is downloaded here, and no database is needed: the live
+      # suite imports nothing that touches Postgres.
+      - name: Run the live Browserbase verification
+        id: live
+        run: |
+          set -o pipefail
+          echo "Reason: ${{ inputs.reason }}"
+          npx vitest run lib/browserbase/live.test.ts --reporter=verbose 2>&1 | tee live-verification.log
+        continue-on-error: true
+
+      # Always, including on failure, cancellation-by-timeout, or a crash before
+      # the test's own teardown ran. Releases only sessions this suite created.
+      - name: Release any session left running
+        if: always()
+        run: node scripts/release-live-sessions.mjs 2>&1 | tee -a live-verification.log
+
+      # Second line of defence before anything is kept: strips the literal
+      # secret values and any capability-shaped string from the log.
+      - name: Scrub the log
+        if: always()
+        run: node scripts/scrub-log.mjs live-verification.log
+
+      - name: Keep the scrubbed log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browserbase-live-verification-log
+          path: live-verification.log
+          retention-days: 14
+
+      # Reported honestly: the job fails if the provider verification failed,
+      # after cleanup and after the log has been preserved.
+      - name: Report the result
+        if: always()
+        run: |
+          if [ "${{ steps.live.outcome }}" = "success" ]; then
+            echo "### Browserbase live verification passed" >> "$GITHUB_STEP_SUMMARY"
+            echo "A real session was created, driven, and released." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Browserbase live verification failed" >> "$GITHUB_STEP_SUMMARY"
+            echo "See the browserbase-live-verification-log artifact." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
