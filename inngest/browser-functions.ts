@@ -13,6 +13,12 @@ import { inngest } from "./client";
 import { claimNextRunnableBrowserRun } from "@/lib/browserbase/queue";
 import { executeBrowserRun, finishBrowserRun } from "@/lib/browserbase/worker";
 import { recordEventWithRetry } from "@/lib/browserbase/activity";
+import {
+    failExhaustedRuns,
+    reconcileSlotCapacity,
+    sweepAbandonedSessions,
+    sweepOverrunningRuns,
+} from "@/lib/browserbase/limits";
 
 export const BROWSER_RUN_QUEUED = "browser/run.queued";
 
@@ -63,5 +69,34 @@ export const drainBrowserQueue = inngest.createFunction(
         await step.sendEvent("drain-again", { name: BROWSER_RUN_QUEUED, data: { after: claimed.id } });
 
         return { status: outcome.status, browserRunId: claimed.id };
+    },
+);
+
+/**
+ * The cleanup pass. Runs every five minutes, independently of whether any
+ * worker is alive, because the resources it frees are exactly the ones a
+ * dead worker leaves behind.
+ *
+ * Each sweep is a separate step so a failure in one does not prevent the
+ * others, and each is safe to repeat: they act on state, not on a plan.
+ */
+export const sweepBrowserResourcesFunction = inngest.createFunction(
+    {
+        id: "sweep-browser-resources",
+        triggers: [{ cron: "*/5 * * * *" }],
+        concurrency: { limit: 1 },
+    },
+    async ({ step }) => {
+        const overrunningRuns = await step.run("stop-overrunning-runs", () => sweepOverrunningRuns());
+        const exhaustedRuns = await step.run("fail-exhausted-runs", () => failExhaustedRuns());
+        const abandonedSessions = await step.run("release-abandoned-sessions", () => sweepAbandonedSessions());
+        const slots = await step.run("reconcile-slot-capacity", () => reconcileSlotCapacity());
+
+        // Freeing a slot may have unblocked something waiting behind it.
+        if (overrunningRuns > 0 || abandonedSessions > 0) {
+            await step.sendEvent("drain-after-sweep", { name: BROWSER_RUN_QUEUED, data: { after: "sweep" } });
+        }
+
+        return { overrunningRuns, exhaustedRuns, abandonedSessions, slots };
     },
 );

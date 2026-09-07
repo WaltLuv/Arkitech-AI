@@ -40,6 +40,8 @@ type RunView = {
     result: string | null
     session: { status: string; releaseState: string } | null
     site: { url: string; title: string } | null
+    durationMs: number | null
+    artifactBytes: number | null
 }
 
 type ActivityEvent = { sequence: number; kind: string; actor: string; detail: Record<string, unknown> | null; createdAt: string }
@@ -313,7 +315,9 @@ export function BrowserWatch({ browserRunId }: { browserRunId: string }) {
                 <div className="rounded-lg border p-3">
                     <div className="text-muted-foreground">Browser session</div>
                     <div className="font-medium">{run.session ? run.session.status : "none"}</div>
-                    {frameMeta && <div className="text-xs text-muted-foreground">{frameMeta.viewport.width} x {frameMeta.viewport.height}</div>}
+                    {frameMeta
+                        ? <div className="text-xs text-muted-foreground">{frameMeta.viewport.width} x {frameMeta.viewport.height}</div>
+                        : <div className="text-xs text-muted-foreground">{describeUsage(run)}</div>}
                 </div>
             </div>
 
@@ -469,6 +473,14 @@ export function BrowserWatch({ browserRunId }: { browserRunId: string }) {
             </Tabs>
         </div>
     )
+}
+
+/** What the run consumed, once it is over. Measurement, not a price. */
+function describeUsage(run: RunView): string {
+    const parts: string[] = []
+    if (run.durationMs != null) parts.push(`${Math.max(1, Math.round(run.durationMs / 1000))}s of browser`)
+    if (run.artifactBytes) parts.push(`${Math.max(1, Math.round(run.artifactBytes / 1024))} KB of files`)
+    return parts.join(", ")
 }
 
 function summariseDetail(detail: Record<string, unknown> | null): string {

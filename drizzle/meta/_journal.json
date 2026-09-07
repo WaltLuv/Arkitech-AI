@@ -71,6 +71,13 @@
       "when": 1788741841224,
       "tag": "0009_browser_site_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788751015101,
+      "tag": "0010_browser_usage_measurements",
+      "breakpoints": true
     }
   ]
 }

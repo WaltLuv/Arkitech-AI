@@ -2,6 +2,7 @@
  * Per-Agent Usage Credit spend for the signed-in user, read from the ledger.
  */
 import { AgentConfig, creditLedger, db, users } from "@/db";
+import { browserUsageForOwner } from "@/lib/browserbase/limits";
 import { summariseUsage } from "@/lib/usage-summary";
 import { currentUser } from "@clerk/nextjs/server";
 import { desc, eq } from "drizzle-orm";
@@ -40,6 +41,10 @@ export async function GET() {
 
     const nameFor = new Map(agents.map(a => [a.agentId, a.name]));
 
+    // Browser consumption is reported next to credits but is not priced:
+    // browser work is paid for by the Run charge already in the ledger.
+    const browser = await browserUsageForOwner(userEmail);
+
     const balanceRows = await db
         .select({ balance: users.usageCredits })
         .from(users)
@@ -49,6 +54,7 @@ export async function GET() {
         balance: balanceRows[0]?.balance ?? 0,
         totalNet: summary.totalNet,
         systemCredits: summary.systemCredits,
+        browser,
         perAgent: summary.perAgent.map(entry => ({
             ...entry,
             name: nameFor.get(entry.agentId) ?? null,

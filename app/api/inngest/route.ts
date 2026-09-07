@@ -7,9 +7,9 @@ import {
     ExecuteScheduledAgent,
     ProcessScheduledAgent,
 } from "@/inngest/functions";
-import { drainBrowserQueue } from "@/inngest/browser-functions";
+import { drainBrowserQueue, sweepBrowserResourcesFunction } from "@/inngest/browser-functions";
 
 export const { GET, POST, PUT } = serve({
     client: inngest,
-    functions: [ProcessScheduledAgent, ExecuteScheduledAgent, drainBrowserQueue],
+    functions: [ProcessScheduledAgent, ExecuteScheduledAgent, drainBrowserQueue, sweepBrowserResourcesFunction],
 });

@@ -1,7 +1,7 @@
 /**
  * Drizzle table definitions and inferred types for users, tools, agent configs, and agent runs.
  */
-import { boolean, customType, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
+import { bigint, boolean, customType, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
 
 /** Raw bytes. Drizzle has no built-in bytea, so the mapping is declared once here. */
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
@@ -238,6 +238,13 @@ export const browserRun = pgTable(
     // What the agent reported when it finished. Plain text; never reasoning.
     result: text("result"),
 
+    // How long a browser was actually held for this run, and how many bytes of
+    // evidence it left. Measurement for observability, not a price: browser
+    // work is paid for by the Run's existing Usage Credit charge and nothing
+    // here creates a Ledger Entry.
+    durationMs: integer("duration_ms"),
+    artifactBytes: bigint("artifact_bytes", { mode: "number" }),
+
     queuedAt: timestamp("queued_at", { withTimezone: true }).defaultNow().notNull(),
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     startedAt: timestamp("started_at", { withTimezone: true }),
@@ -275,6 +282,10 @@ export const browserSession = pgTable(
 
     // not_requested | requested | released | failed
     releaseState: varchar("release_state", { length: 20 }).default("not_requested").notNull(),
+
+    // How long this provider session was held. Written when it is released,
+    // so a session nobody released is visibly unmeasured rather than free.
+    durationMs: integer("duration_ms"),
 
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     releasedAt: timestamp("released_at", { withTimezone: true }),

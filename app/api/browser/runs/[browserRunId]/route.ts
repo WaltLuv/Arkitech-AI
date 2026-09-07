@@ -51,6 +51,8 @@ export async function GET(_req: NextRequest, context: { params: Promise<{ browse
         cancelRequested: run.cancelRequestedAt !== null,
         failureReason: run.failureReason,
         result: run.result,
+        durationMs: run.durationMs,
+        artifactBytes: run.artifactBytes,
         queuePosition: position,
         controller,
         session: session
