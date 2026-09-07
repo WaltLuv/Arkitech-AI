@@ -43,6 +43,27 @@
       "when": 1788737275899,
       "tag": "0005_browser_activity",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788737429228,
+      "tag": "0006_browser_control",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788739842560,
+      "tag": "0007_browser_artifact_blob",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788740009141,
+      "tag": "0008_browser_run_result",
+      "breakpoints": true
     }
   ]
 }

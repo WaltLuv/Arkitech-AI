@@ -16,7 +16,7 @@ import {
 import { AGENT_SLOT_QUOTA } from "@/lib/agent-slots";
 import { UserDetailContext } from "@/context/UserDetailContext"
 import { UserButton } from "@clerk/nextjs"
-import { AppWindow, Blocks, Bot, Layers, Play, Settings, User2 } from "lucide-react"
+import { AppWindow, Blocks, Bot, Globe, Layers, Play, Settings, User2 } from "lucide-react"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import axios from "axios"
@@ -69,6 +69,12 @@ export function AppSidebar() {
                             <Play className="h-[18px] w-[18px] text-red-900" />
                         </div>
                         <span>Runs</span>
+                    </SidebarMenuButton>
+                    <SidebarMenuButton onClick={() => router.push('/dashboard/browser')} className={`h-12 gap-3 hover:bg-slate-100 ${path?.startsWith('/dashboard/browser') ? 'bg-slate-100' : null}`}>
+                        <div className=" flex h-9 w-9 shrink-0 bg-sky-100 items-center justify-center rounded-lg">
+                            <Globe className="h-[18px] w-[18px] text-sky-900" />
+                        </div>
+                        <span>Browser</span>
                     </SidebarMenuButton>
                     <SidebarMenuButton onClick={() => router.push('/dashboard/integrations')} className={`h-12 gap-3 hover:bg-slate-100 ${path == ('/dashboard/integrations') ? 'bg-slate-100' : null}`}>
                         <div className=" flex h-9 w-9 shrink-0 bg-purple-100 items-center justify-center rounded-lg">

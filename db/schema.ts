@@ -1,7 +1,14 @@
 /**
  * Drizzle table definitions and inferred types for users, tools, agent configs, and agent runs.
  */
-import { boolean, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
+import { boolean, customType, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
+
+/** Raw bytes. Drizzle has no built-in bytea, so the mapping is declared once here. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -228,6 +235,9 @@ export const browserRun = pgTable(
 
     failureReason: text("failure_reason"),
 
+    // What the agent reported when it finished. Plain text; never reasoning.
+    result: text("result"),
+
     queuedAt: timestamp("queued_at", { withTimezone: true }).defaultNow().notNull(),
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     startedAt: timestamp("started_at", { withTimezone: true }),
@@ -387,6 +397,47 @@ export const browserArtifact = pgTable(
 );
 
 
+/**
+ * Who may drive a browser run, and since when.
+ *
+ * One row per run. `generation` is a fence: it increases on every handover, and
+ * an actor holding an older generation is refused. That is what stops a worker
+ * that was paused, or a human tab left open, from writing after control moved.
+ */
+export const browserControlLease = pgTable(
+  "browserControlLease",
+  {
+    browserRunId: uuid("browser_run_id").primaryKey(),
+    userEmail: text("email").notNull(),
+
+    // agent | human | none
+    holderKind: varchar("holder_kind", { length: 10 }).notNull(),
+    holderId: varchar("holder_id", { length: 200 }),
+
+    // Monotonic. Every grant and every revocation increments it.
+    generation: integer("generation").default(0).notNull(),
+
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+);
+
+
+/**
+ * The bytes behind a browserArtifact, held in Arkitech's own database rather
+ * than referenced at the provider. A provider URL expires; this does not.
+ *
+ * Separate from browserArtifact so listing files never drags every screenshot
+ * through the query.
+ */
+export const browserArtifactBlob = pgTable("browserArtifactBlob", {
+  artifactId: uuid("artifact_id").primaryKey(),
+  userEmail: text("email").notNull(),
+  bytes: bytea("bytes").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type CreditLedgerEntry = typeof creditLedger.$inferSelect;
@@ -396,3 +447,5 @@ export type BrowserSession = typeof browserSession.$inferSelect;
 export type BrowserSlot = typeof browserSlot.$inferSelect;
 export type BrowserEvent = typeof browserEvent.$inferSelect;
 export type BrowserArtifact = typeof browserArtifact.$inferSelect;
+export type BrowserControlLease = typeof browserControlLease.$inferSelect;
+export type BrowserArtifactBlob = typeof browserArtifactBlob.$inferSelect;
