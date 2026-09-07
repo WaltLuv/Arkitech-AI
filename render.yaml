@@ -1,0 +1,76 @@
+# Render blueprint for Arkitech AI.
+#
+# A persistent Node service rather than a serverless one, deliberately. The CDP
+# connection to a Browserbase session is cached per process in
+# lib/browserbase/driver.ts, and Watch takes a frame roughly once a second; on a
+# serverless host every frame would reopen that connection.
+#
+# No secret value appears in this file. Everything marked `sync: false` is set
+# in the Render dashboard and never travels through git.
+
+services:
+  - type: web
+    name: arkitech-ai
+    runtime: node
+    plan: starter
+    region: oregon
+    branch: main
+
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+
+    # Reports the process, the database, and whether browser execution is
+    # configured. Booleans and states only; see app/api/health/route.ts.
+    healthCheckPath: /api/health
+
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+
+      # Neon serverless Postgres.
+      - key: DATABASE_URL
+        sync: false
+
+      # Clerk. The publishable key is public by design; the secret is not.
+      - key: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: NEXT_PUBLIC_CLERK_SIGN_IN_URL
+        value: /sign-in
+      - key: NEXT_PUBLIC_CLERK_SIGN_UP_URL
+        value: /sign-up
+
+      # Agent generation and execution.
+      - key: GOOGLE_CLOUD_GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+
+      # External app connections.
+      - key: COMPOSIO_API_KEY
+        sync: false
+
+      # Browserbase. Session-based execution reads only these two.
+      - key: BROWSERBASE_API_KEY
+        sync: false
+      - key: BROWSERBASE_PROJECT_ID
+        sync: false
+
+      # Read only by the legacy hosted-agent research tool in
+      # lib/browserbase-tool.ts. Session-based execution never reads it, so
+      # leave it unset unless that tool is wanted in production.
+      - key: BROWSERBASE_AGENT_ID
+        sync: false
+
+      # Cost bounds. Defaults in lib/browserbase/limits.ts apply when unset.
+      - key: BROWSER_SLOT_LIMIT
+        value: "1"
+
+      # Inngest, for scheduled runs and the browser queue worker.
+      - key: INNGEST_EVENT_KEY
+        sync: false
+      - key: INNGEST_SIGNING_KEY
+        sync: false

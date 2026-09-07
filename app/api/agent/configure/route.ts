@@ -188,7 +188,7 @@ export async function GET(req: NextRequest) {
     const user = await currentUser();
 
     if (!user) {
-        return NextResponse.json({ error: 'Unauthorized User' }, { status: 400 })
+        return NextResponse.json({ error: 'Unauthorized User' }, { status: 401 })
     }
 
     const result = await db.select().from(AgentConfig)
