@@ -8,6 +8,11 @@
  * stored, logged, returned, or placed in an error message. Every error that
  * leaves this module passes through `redactCapabilities` first.
  *
+ * No connection is made without a site guard registered for the session.
+ * The guard is attached the moment the connection exists, before any page
+ * is touched, so there is no window in which the browser is driven
+ * unpoliced. A caller that has not registered a guard is refused.
+ *
  * Watchers and human controllers never connect themselves. They see JPEG
  * frames captured here and send actions that are validated and dispatched
  * here, after the caller has checked the control lease.
@@ -15,14 +20,30 @@
 import { chromium, type Browser, type Page } from "playwright-core";
 import { retrieveSession } from "./client";
 import type { BrowserAction, Viewport } from "./input-mapping";
+import type { GuardContext, SiteGuard } from "./site-guard";
 
 const CONNECT_TIMEOUT_MS = 20_000;
 const IDLE_DISCONNECT_MS = 60_000;
 
-type Connection = { browser: Browser; lastUsed: number };
+type Connection = { browser: Browser; lastUsed: number; pinned: boolean };
 
 /** Warm connections, keyed by provider session id. Harmless when cold. */
 const connections = new Map<string, Connection>();
+
+/** The policy enforcer for each session. Registered before connecting. */
+const guards = new Map<string, SiteGuard>();
+
+export function registerSessionGuard(sessionId: string, guard: SiteGuard): void {
+    guards.set(sessionId, guard);
+}
+
+export function hasSessionGuard(sessionId: string): boolean {
+    return guards.has(sessionId);
+}
+
+export function sessionGuard(sessionId: string): SiteGuard | null {
+    return guards.get(sessionId) ?? null;
+}
 
 /**
  * Strips anything that would let the reader of a log or an error message
@@ -51,6 +72,13 @@ export class BrowserDriverError extends Error {
     }
 }
 
+export class SitePolicyError extends Error {
+    constructor(readonly host: string, readonly reason: string) {
+        super(`Navigation to ${host || "that destination"} is not allowed by site policy (${reason})`);
+        this.name = "SitePolicyError";
+    }
+}
+
 function wrap(sessionId: string, error: unknown): BrowserDriverError {
     const message = error instanceof Error ? error.message : String(error);
     return new BrowserDriverError(message, sessionId);
@@ -63,6 +91,11 @@ async function connect(sessionId: string): Promise<Browser> {
         return existing.browser;
     }
     connections.delete(sessionId);
+
+    const guard = guards.get(sessionId);
+    if (!guard) {
+        throw new BrowserDriverError("No site policy is registered for this session; refusing to connect", sessionId);
+    }
 
     const session = await retrieveSession(sessionId);
     const connectUrl = session.connectUrl;
@@ -82,14 +115,36 @@ async function connect(sessionId: string): Promise<Browser> {
         if (current?.browser === browser) connections.delete(sessionId);
     });
 
-    connections.set(sessionId, { browser, lastUsed: Date.now() });
+    // Policed before anything else can happen on this connection. If the
+    // guard cannot attach, the connection is not usable.
+    try {
+        for (const context of browser.contexts()) {
+            await guard.attach(context as unknown as GuardContext);
+        }
+    } catch (error) {
+        await browser.close().catch(() => undefined);
+        throw wrap(sessionId, error);
+    }
+
+    connections.set(sessionId, { browser, lastUsed: Date.now(), pinned: false });
     return browser;
+}
+
+/**
+ * Keeps a connection open regardless of idleness. The worker pins its
+ * connection for the life of the run, because its guard is the one that
+ * must stay attached while a person drives and the agent is not.
+ */
+export async function pinSession(sessionId: string): Promise<void> {
+    await connect(sessionId);
+    const connection = connections.get(sessionId);
+    if (connection) connection.pinned = true;
 }
 
 /** Closes connections nobody has used for a while. Called opportunistically. */
 export async function closeIdleConnections(now = Date.now()): Promise<void> {
     for (const [sessionId, connection] of connections) {
-        if (now - connection.lastUsed > IDLE_DISCONNECT_MS) {
+        if (!connection.pinned && now - connection.lastUsed > IDLE_DISCONNECT_MS) {
             connections.delete(sessionId);
             await connection.browser.close().catch(() => undefined);
         }
@@ -99,13 +154,14 @@ export async function closeIdleConnections(now = Date.now()): Promise<void> {
 export async function disconnectSession(sessionId: string): Promise<void> {
     const connection = connections.get(sessionId);
     connections.delete(sessionId);
+    guards.delete(sessionId);
     if (connection) await connection.browser.close().catch(() => undefined);
 }
 
 /**
  * The tab the person or the agent is looking at: the most recently opened one
  * that is still open. A popup therefore becomes the current tab, which is
- * what a person expects, and which site policy checks separately.
+ * what a person expects, and which the site guard has already judged.
  */
 async function currentPage(browser: Browser, sessionId: string): Promise<Page> {
     const context = browser.contexts()[0];
@@ -224,9 +280,25 @@ export async function performAction(page: Page, action: BrowserAction): Promise<
     }
 }
 
-/** Navigation is a separate verb so site policy can sit in front of it. */
+/**
+ * Navigation is a separate verb so site policy sits in front of it. The
+ * guard judges the destination before the request is made; the request
+ * layer judges every hop after that; and the landing URL is judged once
+ * more so a refusal is reported as one, not as a network error.
+ */
 export async function navigateTo(sessionId: string, url: string): Promise<void> {
+    const guard = guards.get(sessionId);
+    if (!guard) throw new BrowserDriverError("No site policy is registered for this session", sessionId);
+
+    const before = await guard.decide(url);
+    if (!before.allowed) throw new SitePolicyError(before.host, before.reason);
+
     await withPage(sessionId, async page => {
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+        const after = await guard.decide(page.url());
+        if (!after.allowed) {
+            await page.goto("about:blank").catch(() => undefined);
+            throw new SitePolicyError(after.host, after.reason);
+        }
     });
 }

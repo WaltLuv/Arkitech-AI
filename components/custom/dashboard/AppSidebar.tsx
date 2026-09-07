@@ -13,7 +13,7 @@ import {
     SidebarHeader,
     SidebarMenuButton,
 } from "@/components/ui/sidebar"
-import { AGENT_SLOT_QUOTA } from "@/lib/agent-slots";
+import { AGENT_SLOT_QUOTA } from "@/lib/agent-quota";
 import { UserDetailContext } from "@/context/UserDetailContext"
 import { UserButton } from "@clerk/nextjs"
 import { AppWindow, Blocks, Bot, Globe, Layers, Play, Settings, User2 } from "lucide-react"

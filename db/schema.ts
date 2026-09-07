@@ -438,6 +438,26 @@ export const browserArtifactBlob = pgTable("browserArtifactBlob", {
 });
 
 
+/**
+ * Which sites a browser run for this Agent may reach. One row per Agent,
+ * owner-scoped in every read and write. Absent means the default policy:
+ * public websites allowed, private networks and metadata endpoints refused.
+ * Those refusals are not stored here because no row may switch them off.
+ */
+export const browserSitePolicy = pgTable("browserSitePolicy", {
+  agentId: varchar("agent_id").primaryKey(),
+  userEmail: text("email").notNull(),
+
+  // Public hosts outside the list are allowed when true.
+  allowPublic: boolean("allow_public").default(true).notNull(),
+
+  // Normalised host rules. `example.com` covers its subdomains.
+  allowedHosts: jsonb("allowed_hosts").$type<string[]>().default([]).notNull(),
+
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type CreditLedgerEntry = typeof creditLedger.$inferSelect;
@@ -449,3 +469,4 @@ export type BrowserEvent = typeof browserEvent.$inferSelect;
 export type BrowserArtifact = typeof browserArtifact.$inferSelect;
 export type BrowserControlLease = typeof browserControlLease.$inferSelect;
 export type BrowserArtifactBlob = typeof browserArtifactBlob.$inferSelect;
+export type BrowserSitePolicy = typeof browserSitePolicy.$inferSelect;

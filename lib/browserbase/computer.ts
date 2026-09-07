@@ -13,7 +13,7 @@ import type { Computer } from "@openai/agents";
 
 type Button = Parameters<Computer["click"]>[2];
 import { recordEventWithRetry } from "./activity";
-import { authorizeInput, type AuthorizeResult } from "./control";
+import { authorizeInput, revokeControl, type AuthorizeResult } from "./control";
 import * as driver from "./driver";
 import { AGENT_VIEWPORT, mapKey, type Modifier } from "./input-mapping";
 import { storeArtifact } from "./storage";
@@ -43,7 +43,12 @@ export type ComputerDeps = {
     isCancelled: () => Promise<boolean>;
     sleep: (ms: number) => Promise<void>;
     now: () => number;
+    /** Gives up the agent's lease so a person can step in. Optional for tests. */
+    releaseControl?: (generation: number) => Promise<boolean>;
 };
+
+export const HANDOFF_REASONS = ["login", "mfa", "challenge", "payment", "other"] as const;
+export type HandoffReason = (typeof HANDOFF_REASONS)[number];
 
 export type ComputerParams = {
     browserbaseSessionId: string;
@@ -216,6 +221,46 @@ export class BrowserbaseComputer implements Computer {
         await this.event("action_executed", { ...detail, generation: this.generation });
     }
 
+    /**
+     * The agent asks a person to take over: a sign-in, a one-time code, a
+     * challenge, a payment step. The agent's lease is released so nothing it
+     * does can reach the browser, the request is recorded without any
+     * credential, and the call blocks until control comes back under a new
+     * generation, at which point the page is looked at afresh.
+     */
+    async requestHumanHandoff(reason: HandoffReason, message: string): Promise<string> {
+        if (await this.deps.isCancelled()) throw new RunCancelledError();
+
+        const safeReason = HANDOFF_REASONS.includes(reason) ? reason : "other";
+        const note = typeof message === "string" ? message.slice(0, 300) : "";
+        try {
+            await this.event("approval_requested", { reason: safeReason, message: note, generation: this.generation });
+        } catch {
+            // The note tripped the redaction guard. The request still stands;
+            // it is just recorded without the model's wording.
+            await this.event("approval_requested", { reason: safeReason, generation: this.generation });
+        }
+
+        const releasedGeneration = this.generation;
+        await this.deps.releaseControl?.(releasedGeneration);
+
+        const startedAt = this.deps.now();
+        while (this.deps.now() - startedAt < MAX_HANDOVER_WAIT_MS) {
+            if (await this.deps.isCancelled()) throw new RunCancelledError();
+
+            const fresh = await this.deps.currentAgentGeneration();
+            if (fresh !== null && fresh !== releasedGeneration) {
+                await this.adopt(fresh);
+                await this.event("approval_resolved", { reason: safeReason, generation: fresh });
+                return "A person has handled it and returned control. Take a screenshot before doing anything else; the page may have changed.";
+            }
+
+            await this.deps.sleep(HANDOVER_POLL_MS);
+        }
+
+        throw new HandoverTimeoutError(this.deps.now() - startedAt);
+    }
+
     async click(x: number, y: number, button: Button): Promise<void> {
         const mapped: "left" | "right" | "middle" = button === "right" ? "right" : button === "wheel" ? "middle" : "left";
         await this.act({ type: "click", x, y, button: mapped }, () =>
@@ -287,5 +332,10 @@ export function productionComputerDeps(params: {
         isCancelled: params.isCancelled,
         sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
         now: () => Date.now(),
+        releaseControl: async generation => (await revokeControl({
+            browserRunId: params.browserRunId,
+            userEmail: params.userEmail,
+            expectedGeneration: generation,
+        })) !== null,
     };
 }

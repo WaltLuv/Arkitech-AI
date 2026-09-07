@@ -12,8 +12,17 @@ const url = process.env.TEST_DATABASE_URL;
  * these tests stop proving anything, so keep them in step.
  */
 const SEP = "##";
+
+/**
+ * Everything below runs in its own schema, created here and dropped at the
+ * end. These tests build the tables they need by hand, so sharing `public`
+ * with a migrated database would mean dropping tables other things depend on.
+ */
+const SCHEMA = "arkitech_test_browser_control";
+const psqlEnv = { ...process.env, PGOPTIONS: `-csearch_path=${SCHEMA}` };
+
 const psql = (s: string) =>
-    run("psql", [url as string, "-q", "-tA", "-F", SEP, "-c", s]).then(r => r.stdout.trim());
+    run("psql", [url as string, "-q", "-tA", "-F", SEP, "-c", s], { env: psqlEnv }).then(r => r.stdout.trim());
 
 const RUN_ID = "aaaaaaaa-1111-2222-3333-444444444444";
 const OWNER = "owner@example.com";
@@ -59,6 +68,7 @@ const authorize = async (kind: string, holder: string, generation: number) => {
 
 describe.skipIf(!url)("browser control fencing", () => {
     beforeAll(async () => {
+        await psql(`CREATE SCHEMA IF NOT EXISTS ${SCHEMA}`);
         await psql(`DROP TABLE IF EXISTS "browserControlLease"`);
         await psql(`CREATE TABLE "browserControlLease"(
             browser_run_id uuid primary key, email text not null,
@@ -67,7 +77,7 @@ describe.skipIf(!url)("browser control fencing", () => {
             expires_at timestamptz, updated_at timestamptz not null default now())`);
     });
 
-    afterAll(async () => { await psql(`DROP TABLE IF EXISTS "browserControlLease"`); });
+    afterAll(async () => { await psql(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`); });
 
     beforeEach(async () => { await psql(`DELETE FROM "browserControlLease"`); });
 

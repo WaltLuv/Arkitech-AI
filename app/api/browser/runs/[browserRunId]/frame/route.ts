@@ -8,6 +8,7 @@
  */
 import { captureFrame, safeErrorMessage } from "@/lib/browserbase/driver";
 import { latestSessionForRun, loadOwnedBrowserRun } from "@/lib/browserbase/operator";
+import { ensureSessionGuard } from "@/lib/browserbase/policy";
 import { currentUser } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -33,6 +34,11 @@ export async function GET(_req: NextRequest, context: { params: Promise<{ browse
     }
 
     try {
+        // This process may not be the worker's. Its connection enforces the
+        // same policy, silently, before a single frame is taken.
+        await ensureSessionGuard(session.browserbaseSessionId, {
+            browserRunId: run.id, userEmail, agentId: run.agentId, sessionRecordId: session.id, report: false,
+        });
         const frame = await captureFrame(session.browserbaseSessionId);
 
         return new NextResponse(new Uint8Array(frame.jpeg), {

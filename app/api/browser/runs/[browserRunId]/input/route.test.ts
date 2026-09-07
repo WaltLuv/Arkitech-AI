@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     authorizeHumanInput: vi.fn(),
     currentViewport: vi.fn(),
     dispatchAction: vi.fn(),
+    ensureSessionGuard: vi.fn(),
     recordEventWithRetry: vi.fn(async (_p: { detail?: Record<string, unknown> }) => ({ sequence: 1 })),
 }));
 
@@ -27,6 +28,7 @@ vi.mock("@/lib/browserbase/driver", async importOriginal => ({
     dispatchAction: mocks.dispatchAction,
 }));
 vi.mock("@/lib/browserbase/activity", () => ({ recordEventWithRetry: mocks.recordEventWithRetry }));
+vi.mock("@/lib/browserbase/policy", () => ({ ensureSessionGuard: mocks.ensureSessionGuard }));
 
 import { POST } from "./route";
 
@@ -56,6 +58,7 @@ beforeEach(() => {
     mocks.authorizeHumanInput.mockResolvedValue({ allowed: true, generation: 4 });
     mocks.currentViewport.mockResolvedValue({ width: 1280, height: 800 });
     mocks.dispatchAction.mockResolvedValue(undefined);
+    mocks.ensureSessionGuard.mockResolvedValue(undefined);
 });
 
 describe("POST /api/browser/runs/[id]/input", () => {
@@ -155,5 +158,24 @@ describe("POST /api/browser/runs/[id]/input", () => {
         expect(response.status).toBe(502);
         expect(text).not.toMatch(/wss:\/\//);
         expect(text).not.toContain("bb_live_secret");
+    });
+
+    it("installs the site guard before dispatching a person's action", async () => {
+        await POST(request(validBody), { params });
+
+        expect(mocks.ensureSessionGuard).toHaveBeenCalledWith("bb-1", expect.objectContaining({
+            browserRunId: RUN_ID, userEmail: "owner@example.com",
+        }));
+        expect(mocks.ensureSessionGuard.mock.invocationCallOrder[0])
+            .toBeLessThan(mocks.dispatchAction.mock.invocationCallOrder[0]);
+    });
+
+    it("refuses the action if the site guard cannot be installed", async () => {
+        mocks.ensureSessionGuard.mockRejectedValue(new Error("policy unavailable"));
+
+        const response = await POST(request(validBody), { params });
+
+        expect(response.status).toBe(502);
+        expect(mocks.dispatchAction).not.toHaveBeenCalled();
     });
 });

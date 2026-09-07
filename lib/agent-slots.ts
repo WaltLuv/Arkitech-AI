@@ -1,23 +1,16 @@
 /**
- * Agent Slots: a user's quota on how many Agents they may have.
+ * Agent Slots: creating an Agent without exceeding a user's quota.
  *
  * Paused Agents occupy a slot; deleting one frees it. Execution Mode does not
- * change the cost. The quota lives here so the API and the UI cannot drift
- * apart, which is what let the sidebar advertise a different number from the
- * one the server enforced.
+ * change the cost. The quota itself and the rules that need no database live
+ * in `agent-quota.ts` and are re-exported here, so the UI can read the number
+ * without dragging the database module into the browser bundle.
  */
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
+import { AGENT_SLOT_QUOTA } from "./agent-quota";
 
-export const AGENT_SLOT_QUOTA = 3;
-
-/** True when the user may create another Agent. */
-export function hasAgentSlotAvailable(
-    currentAgentCount: number,
-    quota: number = AGENT_SLOT_QUOTA,
-): boolean {
-    return currentAgentCount < quota;
-}
+export { AGENT_SLOT_QUOTA, agentSlotLimitMessage, hasAgentSlotAvailable } from "./agent-quota";
 
 /**
  * Creates an Agent only if the user is under quota.
@@ -102,9 +95,4 @@ export async function createAgentWithinQuota(values: {
     }
 
     return null;
-}
-
-/** The message shown when the quota is reached. */
-export function agentSlotLimitMessage(quota: number = AGENT_SLOT_QUOTA): string {
-    return `Agent limit reached. You can have ${quota} agents. Delete one to free a slot.`;
 }

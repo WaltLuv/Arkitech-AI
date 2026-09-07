@@ -33,18 +33,29 @@ FROM (
 RETURNING "agentId";
 `;
 
-const psql = (args: string[]) => run("psql", [url as string, "-q", "-tA", ...args]);
+
+/**
+ * Everything below runs in its own schema, created here and dropped at the
+ * end. These tests build the tables they need by hand, so sharing `public`
+ * with a migrated database would mean dropping tables other things depend on.
+ */
+const SCHEMA = "arkitech_test_agent_slots";
+const psqlEnv = { ...process.env, PGOPTIONS: `-csearch_path=${SCHEMA}` };
+
+const psql = (args: string[]) =>
+    run("psql", [url as string, "-q", "-tA", ...args], { env: psqlEnv });
 
 describe.skipIf(!psqlAvailable)("Agent Slot quota under concurrency", () => {
     beforeAll(async () => {
         writeFileSync("/tmp/arkitech-guarded-insert.sql", GUARDED);
+        await psql(["-c", `CREATE SCHEMA IF NOT EXISTS ${SCHEMA}`]);
         await psql(["-c", `DROP TABLE IF EXISTS "agentConfig"`]);
         await psql(["-c", `CREATE TABLE "agentConfig"(id serial primary key, email text, "agentId" varchar unique, name varchar, slot_index integer)`]);
         await psql(["-c", `CREATE UNIQUE INDEX agent_config_user_slot ON "agentConfig"(email, slot_index)`]);
     });
 
     afterAll(async () => {
-        await psql(["-c", `DROP TABLE IF EXISTS "agentConfig"`]);
+        await psql(["-c", `DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`]);
     });
 
     it("lets exactly one of many simultaneous creates through at 2 of 3 used", async () => {

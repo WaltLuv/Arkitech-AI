@@ -12,8 +12,17 @@ const url = process.env.TEST_DATABASE_URL;
  *
  * Skipped unless TEST_DATABASE_URL points at a throwaway database.
  */
+
+/**
+ * Everything below runs in its own schema, created here and dropped at the
+ * end. These tests build the tables they need by hand, so sharing `public`
+ * with a migrated database would mean dropping tables other things depend on.
+ */
+const SCHEMA = "arkitech_test_browser_queue";
+const psqlEnv = { ...process.env, PGOPTIONS: `-csearch_path=${SCHEMA}` };
+
 const psql = (sqlText: string) =>
-    run("psql", [url as string, "-q", "-tA", "-c", sqlText]).then(r => r.stdout.trim());
+    run("psql", [url as string, "-q", "-tA", "-c", sqlText], { env: psqlEnv }).then(r => r.stdout.trim());
 
 /** The claim statement from lib/browserbase/queue.ts. */
 const CLAIM_RUN = (worker: string) => `
@@ -38,6 +47,7 @@ RETURNING "slot_index";`;
 
 describe.skipIf(!url)("browser queue under concurrency", () => {
     beforeAll(async () => {
+        await psql(`CREATE SCHEMA IF NOT EXISTS ${SCHEMA}`);
         await psql(`DROP TABLE IF EXISTS "browserRun"; DROP TABLE IF EXISTS "browserSlot";`);
         await psql(`CREATE TABLE "browserRun"(
             id uuid primary key default gen_random_uuid(), email text not null, "agentId" varchar not null,
@@ -50,7 +60,7 @@ describe.skipIf(!url)("browser queue under concurrency", () => {
     });
 
     afterAll(async () => {
-        await psql(`DROP TABLE IF EXISTS "browserRun"; DROP TABLE IF EXISTS "browserSlot";`);
+        await psql(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
     });
 
     beforeEach(async () => {

@@ -10,6 +10,7 @@ import { recordEventWithRetry } from "@/lib/browserbase/activity";
 import { currentViewport, dispatchAction, safeErrorMessage } from "@/lib/browserbase/driver";
 import { mapClientAction, type ClientAction, type RenderedBox } from "@/lib/browserbase/input-mapping";
 import { authorizeHumanInput, latestSessionForRun, loadOwnedBrowserRun } from "@/lib/browserbase/operator";
+import { ensureSessionGuard } from "@/lib/browserbase/policy";
 import { currentUser } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -64,6 +65,10 @@ export async function POST(req: NextRequest, context: { params: Promise<{ browse
 
     let viewport;
     try {
+        // A person's connection is policed the same way the agent's is.
+        await ensureSessionGuard(session.browserbaseSessionId, {
+            browserRunId: run.id, userEmail, agentId: run.agentId, sessionRecordId: session.id, report: false,
+        });
         viewport = await currentViewport(session.browserbaseSessionId);
     } catch (error) {
         return NextResponse.json({ error: safeErrorMessage(error) }, { status: 502 });
