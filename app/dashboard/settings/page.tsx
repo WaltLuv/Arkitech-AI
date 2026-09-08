@@ -11,43 +11,43 @@ import { Switch } from "@/components/ui/switch"
 import { UsageByAgent } from "@/components/custom/usage/UsageByAgent";
 import { Connections } from "@/components/custom/settings/Connections";
 import { UserDetailContext } from "@/context/UserDetailContext"
+import { PLAN_LABELS, type AgentSlotEntitlement } from "@/lib/agent-entitlement-display"
 import axios from "axios"
 import { Bell, Bot, CreditCard, Loader2, ShieldCheck } from "lucide-react"
 import React, { useContext, useEffect, useState } from "react"
 
-const DEMO_AGENT_LIMIT = 5
-
-type AgentSummary = {
-    agentId: string
-}
-
 function SettingsPage() {
     const { userDetail } = useContext(UserDetailContext)
     const currentUser = Array.isArray(userDetail) ? userDetail[0] : userDetail
-    const [agentCount, setAgentCount] = useState(0)
+    // Read from the entitlement seam the server enforces with. This page used
+    // to keep a DEMO_AGENT_LIMIT of 5 of its own, so it contradicted both the
+    // sidebar and the limit creation actually applies.
+    const [entitlement, setEntitlement] = useState<AgentSlotEntitlement | null>(null)
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        getAgentCount()
+        getEntitlement()
     }, [])
 
-    const getAgentCount = async () => {
+    const getEntitlement = async () => {
         try {
             setLoading(true)
-            const result = await axios.get("/api/agent/configure")
-            setAgentCount((result.data as AgentSummary[]).length)
+            const result = await axios.get("/api/agent/slots")
+            setEntitlement(result.data ?? null)
         } finally {
             setLoading(false)
         }
     }
 
-    const usagePercent = Math.min((agentCount / DEMO_AGENT_LIMIT) * 100, 100)
+    const usagePercent = entitlement && entitlement.effectiveLimit > 0
+        ? Math.min((entitlement.occupiedSlots / entitlement.effectiveLimit) * 100, 100)
+        : 0
 
     return (
         <div className="mx-auto w-full max-w-4xl px-6 py-10">
             <div>
                 <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-                <p className="mt-1 text-sm text-muted-foreground">Control your demo workspace preferences and usage limits.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Control your workspace preferences and usage limits.</p>
             </div>
 
             <section className="mt-6 rounded-2xl border bg-background p-5 shadow-sm">
@@ -58,14 +58,26 @@ function SettingsPage() {
                         </div>
                         <div>
                             <div className="flex flex-wrap items-center gap-2">
-                                <h2 className="text-lg font-semibold">Demo plan</h2>
-                                <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-100">Free</Badge>
+                                <h2 className="text-lg font-semibold">
+                                    {entitlement ? `${PLAN_LABELS[entitlement.planTier]} plan` : "Plan"}
+                                </h2>
+                                {entitlement?.override != null ? (
+                                    <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-100">Custom limit</Badge>
+                                ) : null}
                             </div>
-                            <p className="mt-1 text-sm text-muted-foreground">This demo workspace can create up to {DEMO_AGENT_LIMIT} agents.</p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                                {entitlement?.isOverEntitlement
+                                    ? `Your ${entitlement.occupiedSlots} agents keep working. Hiring another needs ${entitlement.occupiedSlots - entitlement.effectiveLimit + 1} freed, or a bigger plan.`
+                                    : entitlement
+                                        ? `This workspace can employ up to ${entitlement.effectiveLimit} agents.`
+                                        : "Loading your plan."}
+                            </p>
                         </div>
                     </div>
                     <div className="text-sm font-medium text-muted-foreground">
-                        {loading ? <Loader2 className="size-4 animate-spin" /> : `${agentCount}/${DEMO_AGENT_LIMIT} agents`}
+                        {loading || !entitlement
+                            ? <Loader2 className="size-4 animate-spin" />
+                            : `${entitlement.occupiedSlots}/${entitlement.effectiveLimit} agents`}
                     </div>
                 </div>
                 <Progress value={usagePercent} className="mt-5" />
