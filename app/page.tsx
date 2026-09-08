@@ -169,7 +169,7 @@ export default function Home() {
                     <div className="flex flex-col gap-3 border-b border-slate-200 pb-5 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-sm font-medium text-slate-500">Today&apos;s briefing</p>
-                        <h2 className="mt-1 text-2xl font-bold tracking-normal">3 agents ready to run</h2>
+                        <h2 className="mt-1 text-2xl font-bold tracking-normal">Your first agents, ready to run</h2>
                       </div>
                       <button className="inline-flex h-9 w-fit items-center justify-center gap-2 rounded-lg bg-slate-950 px-3 text-sm font-medium text-white">
                         <Play className="size-4" />

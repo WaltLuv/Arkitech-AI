@@ -13,7 +13,7 @@ import {
     SidebarHeader,
     SidebarMenuButton,
 } from "@/components/ui/sidebar"
-import { AGENT_SLOT_QUOTA } from "@/lib/agent-quota";
+import { PLAN_LABELS, type AgentSlotEntitlement } from "@/lib/agent-entitlement-display";
 import { UserDetailContext } from "@/context/UserDetailContext"
 import { UserButton } from "@clerk/nextjs"
 import { AppWindow, Blocks, Bot, Globe, Layers, Play, Settings, User2 } from "lucide-react"
@@ -28,18 +28,18 @@ export function AppSidebar() {
     const { userDetail, setUserDetail } = useContext(UserDetailContext);
     const router = useRouter();
 
-    // The slot counter shows how many Agents exist, not the agentCredits
-    // column, which is never decremented and would show a new user as full.
-    const [agentCount, setAgentCount] = useState<number | null>(null);
+    // Both numbers come from the server's entitlement seam, so the sidebar
+    // cannot show a limit that creation does not actually enforce.
+    const [entitlement, setEntitlement] = useState<AgentSlotEntitlement | null>(null);
 
     useEffect(() => {
         let cancelled = false
-        axios.get("/api/agent/configure")
+        axios.get("/api/agent/slots")
             .then((result) => {
-                if (!cancelled) setAgentCount(Array.isArray(result.data) ? result.data.length : 0)
+                if (!cancelled) setEntitlement(result.data ?? null)
             })
             .catch(() => {
-                if (!cancelled) setAgentCount(null)
+                if (!cancelled) setEntitlement(null)
             })
         return () => { cancelled = true }
     }, [path]);
@@ -108,9 +108,33 @@ export function AppSidebar() {
             </SidebarContent>
             <SidebarFooter >
                 <div className="p-2 border rounded-lg flex gap-2 flex-col">
-                    <h2 className="flex justify-between">Agents <span>{agentCount ?? "-"}/{AGENT_SLOT_QUOTA}</span></h2>
+                    <h2 className="flex justify-between">
+                        Agents
+                        <span>
+                            {entitlement
+                                ? `${entitlement.occupiedSlots}/${entitlement.effectiveLimit} slots`
+                                : "-"}
+                        </span>
+                    </h2>
+                    {entitlement ? (
+                        <p className="text-xs text-slate-500">{PLAN_LABELS[entitlement.planTier]}</p>
+                    ) : null}
+                    {entitlement?.isOverEntitlement ? (
+                        <p className="text-xs text-amber-700">
+                            Your {entitlement.occupiedSlots} Agents keep working. Hiring another needs
+                            {" "}{entitlement.occupiedSlots - entitlement.effectiveLimit + 1} freed, or a bigger plan.
+                        </p>
+                    ) : entitlement?.isAtLimit ? (
+                        <p className="text-xs text-slate-500">Agent limit reached.</p>
+                    ) : null}
                     <h2 className="flex justify-between">Credits <span>{userDetail?.usageCredits}</span></h2>
-                    <Progress value={66} />
+                    <Progress
+                        value={
+                            entitlement && entitlement.effectiveLimit > 0
+                                ? Math.min(100, (entitlement.occupiedSlots / entitlement.effectiveLimit) * 100)
+                                : 0
+                        }
+                    />
                 </div>
                 <div className="flex items-center p-2 mt-2 gap-2.5">
                     <UserButton />

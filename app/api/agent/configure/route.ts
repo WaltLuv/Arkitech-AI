@@ -10,7 +10,7 @@ import { currentUser } from "@clerk/nextjs/server";
 import { and, count, desc, eq } from "drizzle-orm";
 import { loadOwnedAgent } from "@/lib/agent-ownership";
 import { calculateNextDailyRun } from "@/lib/agent-schedule";
-import { agentSlotLimitMessage, createAgentWithinQuota } from "@/lib/agent-slots";
+import { agentSlotLimitMessage, createAgentWithinEntitlement, getAgentSlotEntitlement } from "@/lib/agent-slots";
 
 export async function POST(req: NextRequest) {
 
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
             // Columns are listed explicitly rather than spread from the model
             // output, so generated content cannot set fields it has no business
             // setting. The quota is enforced inside this one statement.
-            const created = await createAgentWithinQuota({
+            const created = await createAgentWithinEntitlement({
                 userEmail,
                 agentId,
                 agentImage: 'https://api.dicebear.com/10.x/gaze/svg?tags=animation&seed=' + agentId,
@@ -91,8 +91,12 @@ export async function POST(req: NextRequest) {
             });
 
             if (!created) {
+                // The entitlement is read again only to explain the refusal.
+                // The refusal itself was decided by the claim statement, so
+                // this read cannot grant a slot the database declined.
+                const entitlement = await getAgentSlotEntitlement(userEmail);
                 return NextResponse.json(
-                    { error: agentSlotLimitMessage() },
+                    { error: agentSlotLimitMessage(entitlement), entitlement },
                     { status: 403 }
                 )
             }
