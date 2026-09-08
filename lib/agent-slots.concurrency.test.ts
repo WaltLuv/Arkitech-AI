@@ -50,7 +50,7 @@ describe.skipIf(!psqlAvailable)("Agent Slot quota under concurrency", () => {
         writeFileSync("/tmp/arkitech-guarded-insert.sql", GUARDED);
         await psql(["-c", `CREATE SCHEMA IF NOT EXISTS ${SCHEMA}`]);
         await psql(["-c", `DROP TABLE IF EXISTS "agentConfig"`]);
-        await psql(["-c", `CREATE TABLE "agentConfig"(id serial primary key, email text, "agentId" varchar unique, name varchar, slot_index integer)`]);
+        await psql(["-c", `CREATE TABLE "agentConfig"(id serial primary key, email text, "agentId" varchar unique, name varchar, status varchar default 'active', slot_index integer)`]);
         await psql(["-c", `CREATE UNIQUE INDEX agent_config_user_slot ON "agentConfig"(email, slot_index)`]);
     });
 
@@ -112,5 +112,48 @@ describe.skipIf(!psqlAvailable)("Agent Slot quota under concurrency", () => {
         );
 
         expect(results.filter(Boolean)).toHaveLength(2);
+    }, 60_000);
+
+    it("counts a paused Agent against the quota", async () => {
+        // A slot is allocation, not activity. Pausing an Agent keeps its row
+        // and therefore its slot; if pausing freed one, three paused Agents
+        // plus three active ones would be six.
+        const email = "paused@example.com";
+        await psql(["-c", `DELETE FROM "agentConfig" WHERE email='${email}'`]);
+        await psql(["-c", `INSERT INTO "agentConfig"(email,"agentId",name,status,slot_index)
+            VALUES ('${email}','p1','A','paused',0),('${email}','p2','B','paused',1),('${email}','p3','C','active',2)`]);
+
+        const attempt = await psql(["-v", `email=${email}`, "-v", "aid=fourth", "-f", "/tmp/arkitech-guarded-insert.sql"])
+            .then(r => r.stdout.trim())
+            .catch(() => "");
+
+        expect(attempt).toBe("");
+
+        const { stdout } = await psql(["-c", `SELECT count(*) FROM "agentConfig" WHERE email='${email}'`]);
+        expect(Number(stdout.trim())).toBe(3);
+    }, 60_000);
+
+    it("frees a slot the moment an Agent is deleted, and reuses that index", async () => {
+        const email = "delete@example.com";
+        await psql(["-c", `DELETE FROM "agentConfig" WHERE email='${email}'`]);
+        await psql(["-c", `INSERT INTO "agentConfig"(email,"agentId",name,slot_index)
+            VALUES ('${email}','d1','A',0),('${email}','d2','B',1),('${email}','d3','C',2)`]);
+
+        // Full: the create is refused.
+        expect(await psql(["-v", `email=${email}`, "-v", "aid=blocked", "-f", "/tmp/arkitech-guarded-insert.sql"])
+            .then(r => r.stdout.trim()).catch(() => "")).toBe("");
+
+        // Delete the middle Agent, freeing slot 1 specifically.
+        await psql(["-c", `DELETE FROM "agentConfig" WHERE email='${email}' AND "agentId"='d2'`]);
+
+        const created = await psql(["-v", `email=${email}`, "-v", "aid=after-delete", "-f", "/tmp/arkitech-guarded-insert.sql"])
+            .then(r => r.stdout.trim()).catch(() => "");
+        expect(created).toBe("after-delete");
+
+        // The lowest free index is reused, so slots never drift upward out of
+        // range as Agents are cycled.
+        const { stdout } = await psql(["-c",
+            `SELECT slot_index FROM "agentConfig" WHERE email='${email}' AND "agentId"='after-delete'`]);
+        expect(Number(stdout.trim())).toBe(1);
     }, 60_000);
 });
