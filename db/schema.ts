@@ -14,7 +14,13 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   name: text("name"),
   email: text("email").notNull().unique(),
-  agentCredits: integer('agentCredits').default(3),
+  // Which plan the account is on, and what decides its Agent Slot entitlement
+  // when no override is set. `lib/agent-entitlement.ts` owns the numbers, and
+  // the claim statement builds its SQL from them.
+  planTier: varchar('plan_tier', { length: 20 }).default('starter'),
+  // An operator-set Agent Slot entitlement that supersedes the plan. Null on an
+  // ordinary account. Bounded by a CHECK constraint, not by trust.
+  agentSlotOverride: integer('agent_slot_override'),
   // Keep the misspelled DB column name for compatibility with existing databases.
   usageCredits: integer('ussageCredits').default(100),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -77,8 +83,9 @@ export const AgentConfig = pgTable("agentConfig", {
   outputFormat: text('outputFormat'),
   status: varchar('status').default('active'),// Active, Pause
   composioSessionId: varchar('composioSessionId'),
-  // Which Agent Slot this Agent occupies, 0-based. The unique index below is
-  // what actually caps a user at AGENT_SLOT_QUOTA agents: locks cannot, because
+  // Which Agent Slot this Agent occupies, 0-based. Server-owned allocation
+  // state: no client may set or move it. The unique index below is what
+  // actually caps a user at their effective entitlement, because locks cannot:
   // a count reads the snapshot taken before the lock was acquired.
   slotIndex: integer('slot_index'),
   createdAt: timestamp("created_at").defaultNow().notNull(),
