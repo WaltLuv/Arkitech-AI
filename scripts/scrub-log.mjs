@@ -34,6 +34,11 @@ const SECRET_ENV = [
     "BROWSERBASE_AGENT_ID",
     "DATABASE_URL",
     "CLERK_SECRET_KEY",
+    "TELEGRAM_TEST_BOT_TOKEN",
+    "SLACK_TEST_BOT_TOKEN",
+    "SLACK_SIGNING_SECRET",
+    "SLACK_CLIENT_SECRET",
+    "CHANNEL_SECRET_KEY",
 ];
 
 const PATTERNS = [
@@ -43,6 +48,10 @@ const PATTERNS = [
     [/signingKey=[^&\s"'<>]+/gi, "signingKey=[redacted]"],
     [/\bbb_(live|test)_[A-Za-z0-9]+/g, "[redacted-key]"],
     [/\bsk-[A-Za-z0-9_-]{16,}/g, "[redacted-key]"],
+    // A Telegram bot token is <bot id>:<35 or so characters>.
+    [/\b\d{6,12}:[A-Za-z0-9_-]{30,}/g, "[redacted-telegram-token]"],
+    // Slack tokens all carry the same short prefixes.
+    [/\bxox[baprs]-[A-Za-z0-9-]{10,}/g, "[redacted-slack-token]"],
     [/(X-Amz-Signature|signature|token)=[^&\s"'<>]+/gi, "$1=[redacted]"],
 ];
 

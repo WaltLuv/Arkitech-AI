@@ -70,6 +70,49 @@ _Avoid_: transaction, row
 The return of a **Run**'s **Credit Cost** when it failed through platform, worker, provider, or agent fault, or was cancelled before execution began. Identical for scheduled and on-demand Runs, and issued at most once per Run.
 _Avoid_: credit back, reversal
 
+
+### Channels
+
+**Channel**:
+Where a **Conversation** is carried: `web`, `telegram` or `slack`. Not a different Agent and not a different product, only a different place the same **Team member** is reached. Web needs no **Channel Connection**, being Arkitech itself.
+_Avoid_: integration, platform, provider (which means the company, not the channel)
+
+**Channel Connection**:
+One bot or one workspace install a user has attached to their account, holding its sealed credentials, its status, and the **Team member** that answers on it. Owned by one user; the thing an inbound event must resolve to before any Agent exists.
+_Avoid_: integration, account, app install
+
+**Connection Status**:
+Where a **Channel Connection** stands: `pending_link`, `active`, `needs_attention`, `disconnected`. `pending_link` is the gap between a verified bot and a human proving they hold the account, and nothing runs for a connection in it.
+_Avoid_: connected (as a stored value), state
+
+**Channel Thread**:
+The provider-side identity of a **Conversation**, and the record that it was authorised: which external chat, on which **Channel Connection**, opened by which external person. Its absence is what refuses a stranger who messages a public bot.
+_Avoid_: chat, mapping, binding
+
+**Link Code**:
+A single-use, short-lived code that binds an external chat to an Arkitech account, stored hashed and carried into Telegram inside a deep link. What makes a public bot username harmless.
+_Avoid_: invite, token (which means a credential here), pairing code
+
+**Conversation**:
+One exchange between a user and one **Team member** on one **Channel**, owned by Arkitech. Deliberately per-channel: continuity across channels comes from conversations sharing an owner and a Team member, not from merging transcripts.
+_Avoid_: thread, chat, session
+
+**Message**:
+One turn in a **Conversation**, inbound or outbound, carrying its **Delivery Status** and, for an agent reply, the **Run** that produced it and therefore the **Usage Credit** it cost.
+_Avoid_: event, turn, post
+
+**Delivery Status**:
+What actually happened to a **Message**: `received` for anything inbound, and `queued`, `sending`, `sent` or `failed` for anything outbound. `sent` means the provider accepted it, never that Arkitech queued it.
+_Avoid_: state, status (unqualified), delivered
+
+**Inbound Event Claim**:
+The row written before an inbound provider delivery is processed, unique on the connection, provider and the provider's own event id. Both providers retry, so the claim is what stops one message becoming two Agent runs, two charges and two replies.
+_Avoid_: dedup key, idempotency key (which means the Credit Ledger's)
+
+**Team member**:
+What an **Agent** is called in anything a customer reads. The everyday product is about delegating work, not configuring AI, so the interface says team member, task, and activity where the code says Agent, Run, and event.
+_Avoid_: agent (in user-facing copy), bot, assistant
+
 ---
 
 ## Deferred / Future Computer Infrastructure

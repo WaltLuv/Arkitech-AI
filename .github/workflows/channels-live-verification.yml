@@ -1,0 +1,146 @@
+name: Channels Live Verification
+
+# Manual only. Every run talks to the real Telegram and Slack APIs with real
+# credentials and sends real messages, so this must never fire on push, on
+# pull_request, or on a schedule.
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: Which provider to verify
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - telegram
+          - slack
+      reason:
+        description: Why this run is happening (recorded in the log)
+        required: false
+        default: Manual live verification
+
+permissions:
+  contents: read
+
+# One at a time. Two runs would fight over the test bot's webhook registration,
+# since a bot has exactly one.
+concurrency:
+  group: channels-live-verification
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Live provider verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Secrets reach the process only as environment variables, and only here.
+    # Nothing below echoes them, and the log is scrubbed before it is kept.
+    env:
+      TELEGRAM_TEST_BOT_TOKEN: ${{ secrets.TELEGRAM_TEST_BOT_TOKEN }}
+      TELEGRAM_TEST_CHAT_ID: ${{ secrets.TELEGRAM_TEST_CHAT_ID }}
+      SLACK_TEST_BOT_TOKEN: ${{ secrets.SLACK_TEST_BOT_TOKEN }}
+      SLACK_TEST_CHANNEL: ${{ secrets.SLACK_TEST_CHANNEL }}
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # The repo's .npmrc sets legacy-peer-deps, without which a clean install
+      # fails on a stale peer range.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check the secrets for the chosen provider are present
+        run: |
+          missing=0
+          want="${{ inputs.provider }}"
+
+          if [ "$want" = "both" ] || [ "$want" = "telegram" ]; then
+            if [ -z "$TELEGRAM_TEST_BOT_TOKEN" ]; then
+              echo "::error::TELEGRAM_TEST_BOT_TOKEN is not set on this repository."
+              missing=1
+            else
+              echo "TELEGRAM_TEST_BOT_TOKEN is set (value hidden)."
+            fi
+            if [ -z "$TELEGRAM_TEST_CHAT_ID" ]; then
+              echo "TELEGRAM_TEST_CHAT_ID is not set. Delivery to a chat will be skipped."
+            fi
+          fi
+
+          if [ "$want" = "both" ] || [ "$want" = "slack" ]; then
+            if [ -z "$SLACK_TEST_BOT_TOKEN" ]; then
+              echo "::error::SLACK_TEST_BOT_TOKEN is not set on this repository."
+              missing=1
+            else
+              echo "SLACK_TEST_BOT_TOKEN is set (value hidden)."
+            fi
+            if [ -z "$SLACK_TEST_CHANNEL" ]; then
+              echo "SLACK_TEST_CHANNEL is not set. Delivery to a channel will be skipped."
+            fi
+          fi
+
+          exit $missing
+
+      # No database is needed: the live suite imports the two provider clients
+      # and nothing that touches Postgres.
+      - name: Run the live channel verification
+        id: live
+        run: |
+          set -o pipefail
+          echo "Reason: ${{ inputs.reason }}"
+
+          want="${{ inputs.provider }}"
+          if [ "$want" = "both" ] || [ "$want" = "telegram" ]; then export LIVE_TELEGRAM=1; fi
+          if [ "$want" = "both" ] || [ "$want" = "slack" ]; then export LIVE_SLACK=1; fi
+
+          npx vitest run lib/channels/live.test.ts --reporter=verbose 2>&1 | tee live-verification.log
+        continue-on-error: true
+
+      # The test deletes the webhook it registered, but a run that died part-way
+      # through would leave the test bot pointed at a host that does not exist.
+      - name: Leave the test bot with no webhook
+        if: always()
+        run: |
+          if [ -n "$TELEGRAM_TEST_BOT_TOKEN" ]; then
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              -X POST "https://api.telegram.org/bot$TELEGRAM_TEST_BOT_TOKEN/deleteWebhook" \
+              -d drop_pending_updates=true)
+            echo "deleteWebhook returned HTTP $code"
+          fi
+
+      # Second line of defence before anything is kept: strips the literal
+      # secret values and the shapes both providers' tokens take.
+      - name: Scrub the log
+        if: always()
+        run: node scripts/scrub-log.mjs live-verification.log
+
+      - name: Keep the scrubbed log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: channels-live-verification-log
+          path: live-verification.log
+          retention-days: 14
+
+      - name: Report the result
+        if: always()
+        run: |
+          if [ "${{ steps.live.outcome }}" = "success" ]; then
+            echo "### Channels live verification passed" >> "$GITHUB_STEP_SUMMARY"
+            echo "The provider calls Arkitech makes were accepted by the real APIs." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "This does not cover a real inbound message reaching a running Arkitech." >> "$GITHUB_STEP_SUMMARY"
+            echo "That needs a deployment with a public address; see docs/channels-live-verification.md." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Channels live verification failed" >> "$GITHUB_STEP_SUMMARY"
+            echo "See the channels-live-verification-log artifact." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
