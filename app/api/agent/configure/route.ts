@@ -11,6 +11,7 @@ import { and, count, desc, eq } from "drizzle-orm";
 import { loadOwnedAgent } from "@/lib/agent-ownership";
 import { calculateNextDailyRun } from "@/lib/agent-schedule";
 import { agentSlotLimitMessage, createAgentWithinQuota } from "@/lib/agent-slots";
+import { pickAgentUpdate } from "@/lib/agent-update";
 
 export async function POST(req: NextRequest) {
 
@@ -146,9 +147,11 @@ export async function PUT(req: NextRequest) {
     }
 
     try {
+        // Only the fields a user may edit. Spreading the request body wrote
+        // every column, `slotIndex` included, which let an Agent be moved out
+        // of its Agent Slot to free a low index and create another Agent.
         const result = await db.update(AgentConfig).set({
-            ...agentConfig,
-            userEmail: ownership.agent.userEmail,
+            ...pickAgentUpdate(agentConfig),
             createdAt: new Date()
         }).where(and(
             eq(AgentConfig.agentId, ownership.agent.agentId),
@@ -158,16 +161,19 @@ export async function PUT(req: NextRequest) {
 
         // Remove stale future occurrences before creating a replacement schedule.
         const deleteScheduledAgentRun = await db.delete(AgentRun)
-            .where(and(eq(AgentRun.agentId, agentConfig?.agentId), eq(AgentRun.status, 'scheduled')))
+            .where(and(eq(AgentRun.agentId, ownership.agent.agentId), eq(AgentRun.status, 'scheduled')))
         // Active recurring agents should always have exactly one upcoming run.
         if (agentConfig?.status == 'active') {
             const nextRun = calculateNextDailyRun({ time: agentConfig?.schedule.time, timezone: agentConfig?.timeZone });
 
+            // Identity comes from the verified Agent and the session, never
+            // from the body: a request naming someone else's address here
+            // would otherwise file this Run against their account.
             await db
                 .insert(AgentRun)
                 .values({
-                    agentId: agentConfig.agentId,
-                    userEmail: agentConfig.userEmail,
+                    agentId: ownership.agent.agentId,
+                    userEmail: userEmail,
                     scheduledFor: nextRun,
                     timezone: agentConfig?.schedule.timezone,
                     status: "scheduled",
