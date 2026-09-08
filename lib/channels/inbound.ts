@@ -64,11 +64,19 @@ export async function receiveInboundMessage({
     connection,
     inbound,
     alreadyClaimed = false,
+    alreadyAutoLinked = false,
 }: {
     connection: ChannelConnection;
     inbound: InboundMessage;
     /** Set only by the pipeline re-entering itself; never by a route. */
     alreadyClaimed?: boolean;
+    /**
+     * Also set only on re-entry. Auto-linking opens a thread and then re-runs
+     * the pipeline to handle the message through the ordinary path. If that
+     * second pass still cannot see the thread, the answer is to refuse, not to
+     * open another one: without this the two would call each other forever.
+     */
+    alreadyAutoLinked?: boolean;
 }): Promise<InboundOutcome> {
     // Claimed before anything else happens, so a retry that races the original
     // stops here rather than at some later step that has already had an effect.
@@ -112,6 +120,7 @@ export async function receiveInboundMessage({
         // signed-in Arkitech user. That user's first direct message opens the
         // conversation, and nobody else's does.
         const preauthorized =
+            !alreadyAutoLinked &&
             connection.authorizedExternalUserId &&
             connection.authorizedExternalUserId === inbound.externalUserId &&
             inbound.chatKind === "private" &&
@@ -322,7 +331,12 @@ async function openPreauthorizedChat({
             target: [channelThread.connectionId, channelThread.externalChatId],
         });
 
-    return receiveInboundMessage({ connection, inbound, alreadyClaimed: true });
+    return receiveInboundMessage({
+        connection,
+        inbound,
+        alreadyClaimed: true,
+        alreadyAutoLinked: true,
+    });
 }
 
 function linkedReply(): string {
