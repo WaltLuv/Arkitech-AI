@@ -67,4 +67,13 @@ export type ChannelAdapter = {
 
     /** Stop receiving events. Called on disconnect; must tolerate being late. */
     teardown(args: { connection: ChannelConnection }): Promise<void>;
+
+    /**
+     * True when a failed call means the credential itself is finished, rather
+     * than this one message being refused. Only the provider can tell those
+     * apart: a Telegram 403 usually means the person blocked the bot, which is
+     * their choice and not a broken connection, while a 401 means the token is
+     * dead and nothing will work until it is replaced.
+     */
+    isCredentialFailure(error: unknown): boolean;
 };

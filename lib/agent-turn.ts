@@ -43,6 +43,61 @@ export async function loadOwnedAgent(
     return (owned[0] as unknown as CreatedAgentType) ?? null;
 }
 
+
+/**
+ * Create the Run for this turn.
+ *
+ * A Run is unique on its Agent and its scheduled time, which is what stops a
+ * scheduled Occurrence being enqueued twice. Conversational turns take that
+ * time from the clock, so two messages to one Team member inside the same
+ * millisecond collide on it. That is rare, and until now the loser of the race
+ * threw and the person's message went unanswered with nothing to show for it.
+ *
+ * Now the timestamp is nudged forward and tried again. The Run is the same Run
+ * either way: nothing about ordering, charging or history depends on those
+ * milliseconds, only the index does.
+ */
+async function openRun({
+    agentConfig,
+    userEmail,
+    cost,
+}: {
+    agentConfig: CreatedAgentType;
+    userEmail: string;
+    cost: number;
+}) {
+    let attempt = 0;
+
+    for (;;) {
+        const at = new Date(Date.now() + attempt);
+
+        try {
+            const rows = await db
+                .insert(AgentRun)
+                .values({
+                    agentId: agentConfig.agentId,
+                    userEmail,
+                    scheduledFor: at,
+                    timezone: agentConfig.schedule?.timezone ?? "UTC",
+                    status: "running",
+                    creditCost: cost,
+                    queuedAt: at,
+                    startedAt: at,
+                })
+                .returning();
+
+            return rows[0];
+        } catch (e) {
+            // 23505 is the occurrence index. Anything else is a real failure.
+            if ((e as { code?: string })?.code !== "23505" || attempt >= 5) {
+                throw e;
+            }
+
+            attempt += 1;
+        }
+    }
+}
+
 export async function runAgentTurn({
     agentConfig,
     userEmail,
@@ -53,23 +108,8 @@ export async function runAgentTurn({
     input: string;
 }): Promise<AgentTurnResult> {
     const cost = creditCostFor("standard");
-    const now = new Date();
 
-    const runRows = await db
-        .insert(AgentRun)
-        .values({
-            agentId: agentConfig.agentId,
-            userEmail,
-            scheduledFor: now,
-            timezone: agentConfig.schedule?.timezone ?? "UTC",
-            status: "running",
-            creditCost: cost,
-            queuedAt: now,
-            startedAt: now,
-        })
-        .returning();
-
-    const run = runRows[0];
+    const run = await openRun({ agentConfig, userEmail, cost });
 
     const charged = await chargeRun({
         userEmail,

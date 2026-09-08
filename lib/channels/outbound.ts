@@ -9,6 +9,7 @@
 import { channelThread, conversation, db } from "@/db";
 import type { ChannelConnection } from "@/db";
 import { and, eq } from "drizzle-orm";
+import { markNeedsAttention } from "./connections";
 import { recordMessage, updateMessageDelivery } from "./conversations";
 import { adapterFor } from "./registry";
 import type { ProviderName } from "./types";
@@ -68,8 +69,10 @@ export async function deliverReply({
         replyToId: replyToId ?? null,
     });
 
+    const adapter = adapterFor(connection.provider as ProviderName);
+
     try {
-        const sent = await adapterFor(connection.provider as ProviderName).sendText({
+        const sent = await adapter.sendText({
             connection,
             externalChatId: thread[0].externalChatId,
             text,
@@ -93,6 +96,17 @@ export async function deliverReply({
         const error = e instanceof Error ? e.message : "Delivery failed";
 
         await updateMessageDelivery({ messageId: stored.id, status: "failed", error });
+
+        // A dead credential is not one bad message, it is a connection that
+        // will fail every time until someone reconnects it. Saying so on the
+        // Connections screen is the difference between a customer fixing it and
+        // a customer wondering why nobody answers.
+        if (adapter.isCredentialFailure(e)) {
+            await markNeedsAttention(
+                connection.id,
+                "Reconnect this channel: the connection was rejected by the provider.",
+            );
+        }
 
         return { outcome: "failed", messageId: stored.id, error };
     }

@@ -8,7 +8,7 @@
 import type { ChannelConnection } from "@/db";
 import { openSecret } from "../secrets";
 import type { ChannelAdapter, OutboundResult } from "../types";
-import { postMessage, revokeToken, splitForSlack } from "./client";
+import { postMessage, revokeToken, SlackApiError, splitForSlack } from "./client";
 
 export function slackBotToken(connection: ChannelConnection): string {
     if (!connection.secret) {
@@ -33,14 +33,15 @@ export const slackAdapter: ChannelAdapter = {
         const chunks = splitForSlack(text);
         let lastTs: string | null = null;
 
-        for (const [index, chunk] of chunks.entries()) {
+        for (const chunk of chunks) {
             const posted = await postMessage({
                 token,
                 channel: externalChatId,
                 text: chunk,
-                // Slack threads by the parent message's ts. Only the first
-                // chunk needs it; the rest follow into the same thread.
-                threadTs: index === 0 ? replyToExternalMessageId ?? null : lastTs,
+                // Every chunk goes to the same place as the first. Threading
+                // each one under the previous would nest a long answer inside
+                // itself.
+                threadTs: replyToExternalMessageId ?? null,
             });
 
             lastTs = posted.ts;
@@ -54,5 +55,16 @@ export const slackAdapter: ChannelAdapter = {
         // is no subscription to delete. Revoking the workspace's token is what
         // actually ends Arkitech's access to it.
         await revokeToken(slackBotToken(connection));
+    },
+
+    isCredentialFailure(error: unknown): boolean {
+        // Slack's own words for a token that has stopped working.
+        if (error instanceof SlackApiError) {
+            return ["invalid_auth", "account_inactive", "token_revoked", "not_authed"].includes(
+                error.code,
+            );
+        }
+
+        return error instanceof Error && /credentials/i.test(error.message);
     },
 };

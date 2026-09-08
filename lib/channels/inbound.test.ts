@@ -64,6 +64,7 @@ vi.mock("@/db", () => {
             }),
         },
         channelThread: table("channelThread"),
+        channelConnection: table("channelConnection"),
         conversation: table("conversation"),
         message: table("message"),
         channelInboundEvent: table("channelInboundEvent"),
@@ -263,6 +264,53 @@ describe("linking", () => {
 
         expect(result.outcome).toBe("linked");
         expect(mocks.inserted.some(row => row.table === "channelThread")).toBe(true);
+    });
+
+    it("starts the connection serving once a chat links", async () => {
+        // Without this the chat links and every message after it is refused by
+        // the status check, silently.
+        mocks.redeemLinkCode.mockResolvedValue({
+            connectionId: "conn-1",
+            userEmail: "owner@example.com",
+        });
+        mocks.selectResults.push([]);
+
+        await receiveInboundMessage({
+            connection: connection({ status: "pending_link" }),
+            inbound: inbound({ linkCode: "code-1", text: null }),
+        });
+
+        expect(
+            mocks.updated.some(
+                row =>
+                    row.table === "channelConnection" &&
+                    (row.values as { status?: string }).status === "active",
+            ),
+        ).toBe(true);
+    });
+
+    it("keeps serving a message sent straight after linking", async () => {
+        // The pass that links and the pass that answers are different
+        // deliveries; the second must not meet a pending_link connection.
+        mocks.redeemLinkCode.mockResolvedValue({
+            connectionId: "conn-1",
+            userEmail: "owner@example.com",
+        });
+        mocks.selectResults.push([]);
+
+        await receiveInboundMessage({
+            connection: connection({ status: "pending_link" }),
+            inbound: inbound({ linkCode: "code-1", text: null }),
+        });
+
+        mocks.selectResults.push([linkedThread()], [ownedConversation]);
+
+        const next = await receiveInboundMessage({
+            connection: connection({ status: "active" }),
+            inbound: inbound({ externalEventId: "43", text: "now do the thing" }),
+        });
+
+        expect(next.outcome).toBe("queued");
     });
 
     it("refuses a code issued for a different connection", async () => {

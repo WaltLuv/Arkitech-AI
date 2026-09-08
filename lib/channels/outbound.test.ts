@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
     recordMessage: vi.fn(),
     updateMessageDelivery: vi.fn(),
     sendText: vi.fn(),
+    isCredentialFailure: vi.fn(),
+    markNeedsAttention: vi.fn(),
 }));
 
 vi.mock("@/db", () => ({
@@ -33,7 +35,14 @@ vi.mock("@/lib/channels/conversations", () => ({
 }));
 
 vi.mock("@/lib/channels/registry", () => ({
-    adapterFor: () => ({ sendText: mocks.sendText }),
+    adapterFor: () => ({
+        sendText: mocks.sendText,
+        isCredentialFailure: mocks.isCredentialFailure,
+    }),
+}));
+
+vi.mock("@/lib/channels/connections", () => ({
+    markNeedsAttention: mocks.markNeedsAttention,
 }));
 
 import { deliverReply } from "@/lib/channels/outbound";
@@ -46,6 +55,8 @@ beforeEach(() => {
     mocks.recordMessage.mockResolvedValue({ id: "msg-out" });
     mocks.updateMessageDelivery.mockResolvedValue(undefined);
     mocks.sendText.mockResolvedValue({ externalMessageId: "55" });
+    mocks.isCredentialFailure.mockReturnValue(false);
+    mocks.markNeedsAttention.mockResolvedValue(undefined);
 });
 
 describe("deliverReply", () => {
@@ -132,6 +143,35 @@ describe("deliverReply", () => {
         expect(mocks.recordMessage).toHaveBeenCalledWith(
             expect.objectContaining({ userEmail: "owner@example.com" }),
         );
+    });
+
+    it("flags the connection when the credential itself is finished", async () => {
+        mocks.sendText.mockRejectedValue(new Error("Slack chat.postMessage failed: invalid_auth"));
+        mocks.isCredentialFailure.mockReturnValue(true);
+
+        await deliverReply({
+            connection,
+            conversationId: "conv-1",
+            userEmail: "owner@example.com",
+            text: "hi",
+        });
+
+        expect(mocks.markNeedsAttention).toHaveBeenCalledWith("conn-1", expect.stringMatching(/Reconnect/));
+    });
+
+    it("does not flag the connection when one message was merely refused", async () => {
+        // Someone blocking the bot is their decision, not a broken connection.
+        mocks.sendText.mockRejectedValue(new Error("Telegram sendMessage failed: bot was blocked"));
+        mocks.isCredentialFailure.mockReturnValue(false);
+
+        await deliverReply({
+            connection,
+            conversationId: "conv-1",
+            userEmail: "owner@example.com",
+            text: "hi",
+        });
+
+        expect(mocks.markNeedsAttention).not.toHaveBeenCalled();
     });
 
     it("keeps the Run on the reply so the spend stays attributable", async () => {

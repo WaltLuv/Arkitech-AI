@@ -21,7 +21,7 @@
  * that. Answering first and working afterwards is what keeps one message from
  * becoming four.
  */
-import { channelThread, conversation, db } from "@/db";
+import { channelConnection, channelThread, conversation, db } from "@/db";
 import type { ChannelConnection } from "@/db";
 import { inngest } from "@/inngest/client";
 import { and, eq } from "drizzle-orm";
@@ -256,6 +256,8 @@ async function linkChat({
             .set({ status: "active", externalUserId: inbound.externalUserId })
             .where(eq(channelThread.id, existing[0].id));
 
+        await activateConnection(connection.id);
+
         return { outcome: "linked", reply: linkedReply() };
     }
 
@@ -276,16 +278,32 @@ async function linkChat({
         chatKind: inbound.chatKind,
     });
 
+    // The connection was pending_link until somebody proved they hold the
+    // account. They just did, so it starts serving messages. Without this the
+    // chat links and then every message after it is refused by the status
+    // check below, silently, which is the worst kind of broken.
+    await activateConnection(connection.id);
+
     await recordMessage({
         conversationId: created.id,
         userEmail: redeemed.userEmail,
         direction: "outbound",
         senderKind: "system",
         body: linkedReply(),
-        status: "queued",
+        // The webhook route delivers this one itself, in its response to the
+        // provider, so it is already on its way by the time this is written.
+        status: "sent",
     });
 
     return { outcome: "linked", reply: linkedReply() };
+}
+
+/** A connection that has been linked is a connection that is working. */
+async function activateConnection(connectionId: string): Promise<void> {
+    await db
+        .update(channelConnection)
+        .set({ status: "active", statusReason: null, updatedAt: new Date() })
+        .where(eq(channelConnection.id, connectionId));
 }
 
 /**

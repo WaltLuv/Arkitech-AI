@@ -7,7 +7,7 @@
 import type { ChannelConnection } from "@/db";
 import { openSecret } from "../secrets";
 import type { ChannelAdapter, OutboundResult } from "../types";
-import { deleteWebhook, sendMessage, splitForTelegram } from "./client";
+import { deleteWebhook, sendMessage, splitForTelegram, TelegramApiError } from "./client";
 
 export type TelegramCredentials = {
     botToken: string;
@@ -56,5 +56,18 @@ export const telegramAdapter: ChannelAdapter = {
     async teardown({ connection }): Promise<void> {
         const { botToken } = telegramCredentials(connection);
         await deleteWebhook(botToken);
+    },
+
+    isCredentialFailure(error: unknown): boolean {
+        // 401 is a dead token. 403 is deliberately not included: it is mostly
+        // "bot was blocked by the user", which is that person's decision and
+        // says nothing about the connection.
+        if (error instanceof TelegramApiError) {
+            return error.errorCode === 401;
+        }
+
+        // An envelope that will not open is a credential problem too, and the
+        // only way out of it is reconnecting.
+        return error instanceof Error && /credentials/i.test(error.message);
     },
 };
