@@ -8,8 +8,16 @@ import {
     ProcessScheduledAgent,
 } from "@/inngest/functions";
 import { drainBrowserQueue, sweepBrowserResourcesFunction } from "@/inngest/browser-functions";
+import { RespondToChannelMessage, SweepChannelInboundEvents } from "@/inngest/channel-functions";
 
 export const { GET, POST, PUT } = serve({
     client: inngest,
-    functions: [ProcessScheduledAgent, ExecuteScheduledAgent, drainBrowserQueue, sweepBrowserResourcesFunction],
+    functions: [
+        ProcessScheduledAgent,
+        ExecuteScheduledAgent,
+        drainBrowserQueue,
+        sweepBrowserResourcesFunction,
+        RespondToChannelMessage,
+        SweepChannelInboundEvents,
+    ],
 });
