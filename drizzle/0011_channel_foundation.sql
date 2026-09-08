@@ -1,4 +1,8 @@
-CREATE TABLE "channelConnection" (
+-- Idempotent, matching the earlier migrations. A migration that cannot be
+-- re-applied fails a retried deploy step and cannot be replayed onto a
+-- database that already has part of it.
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "channelConnection" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"email" text NOT NULL,
 	"provider" varchar(20) NOT NULL,
@@ -13,7 +17,7 @@ CREATE TABLE "channelConnection" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "channelInboundEvent" (
+CREATE TABLE IF NOT EXISTS "channelInboundEvent" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"connection_id" uuid NOT NULL,
 	"provider" varchar(20) NOT NULL,
@@ -21,7 +25,7 @@ CREATE TABLE "channelInboundEvent" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "channelLinkCode" (
+CREATE TABLE IF NOT EXISTS "channelLinkCode" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"connection_id" uuid NOT NULL,
 	"email" text NOT NULL,
@@ -31,7 +35,7 @@ CREATE TABLE "channelLinkCode" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "channelThread" (
+CREATE TABLE IF NOT EXISTS "channelThread" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"conversation_id" uuid NOT NULL,
 	"connection_id" uuid NOT NULL,
@@ -44,7 +48,7 @@ CREATE TABLE "channelThread" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "conversation" (
+CREATE TABLE IF NOT EXISTS "conversation" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"email" text NOT NULL,
 	"agentId" varchar NOT NULL,
@@ -56,7 +60,7 @@ CREATE TABLE "conversation" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "message" (
+CREATE TABLE IF NOT EXISTS "message" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"conversation_id" uuid NOT NULL,
 	"email" text NOT NULL,
@@ -71,15 +75,15 @@ CREATE TABLE "message" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX "channel_connection_account" ON "channelConnection" USING btree ("provider","external_account_id");--> statement-breakpoint
-CREATE INDEX "channel_connection_owner" ON "channelConnection" USING btree ("email","provider");--> statement-breakpoint
-CREATE UNIQUE INDEX "channel_inbound_event_key" ON "channelInboundEvent" USING btree ("connection_id","provider","external_event_id");--> statement-breakpoint
-CREATE INDEX "channel_inbound_event_age" ON "channelInboundEvent" USING btree ("created_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "channel_link_code_hash" ON "channelLinkCode" USING btree ("code_hash");--> statement-breakpoint
-CREATE INDEX "channel_link_code_connection" ON "channelLinkCode" USING btree ("connection_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "channel_thread_external_chat" ON "channelThread" USING btree ("connection_id","external_chat_id");--> statement-breakpoint
-CREATE INDEX "channel_thread_owner" ON "channelThread" USING btree ("email");--> statement-breakpoint
-CREATE INDEX "conversation_owner" ON "conversation" USING btree ("email","last_message_at");--> statement-breakpoint
-CREATE INDEX "conversation_agent" ON "conversation" USING btree ("agentId","last_message_at");--> statement-breakpoint
-CREATE INDEX "message_conversation" ON "message" USING btree ("conversation_id","created_at");--> statement-breakpoint
-CREATE INDEX "message_owner" ON "message" USING btree ("email","created_at");
+CREATE UNIQUE INDEX IF NOT EXISTS "channel_connection_account" ON "channelConnection" USING btree ("provider","external_account_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "channel_connection_owner" ON "channelConnection" USING btree ("email","provider");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "channel_inbound_event_key" ON "channelInboundEvent" USING btree ("connection_id","provider","external_event_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "channel_inbound_event_age" ON "channelInboundEvent" USING btree ("created_at");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "channel_link_code_hash" ON "channelLinkCode" USING btree ("code_hash");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "channel_link_code_connection" ON "channelLinkCode" USING btree ("connection_id");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "channel_thread_external_chat" ON "channelThread" USING btree ("connection_id","external_chat_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "channel_thread_owner" ON "channelThread" USING btree ("email");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "conversation_owner" ON "conversation" USING btree ("email","last_message_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "conversation_agent" ON "conversation" USING btree ("agentId","last_message_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "message_conversation" ON "message" USING btree ("conversation_id","created_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "message_owner" ON "message" USING btree ("email","created_at");
