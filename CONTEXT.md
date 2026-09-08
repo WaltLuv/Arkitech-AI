@@ -19,8 +19,20 @@ Which runtime an **Agent** uses. Only `standard` (tools and chat) exists today. 
 _Avoid_: agent type, agent kind
 
 **Agent Slot**:
-One unit of a user's quota on how many **Agents** they may have. The quota is 3. Paused Agents occupy a slot; deleting an Agent frees one.
-_Avoid_: agent credit (the DB column stays `agentCredits`), agent limit
+One unit of an account's **Agent Slot Entitlement**: how many **Agents** it may have. Paused Agents occupy a slot; deleting an Agent frees one. Execution Mode does not change the cost, and a slot is not browser capacity: a Business account may employ 25 Agents while Arkitech still runs them through one browser slot.
+_Avoid_: agent credit (the `agentCredits` column is gone, and never had a reader), agent limit, seat
+
+**Agent Slot Entitlement**:
+How many **Agent Slots** one account may occupy: its **Plan Tier**'s allotment, or an operator-set override in its place. Resolved server-side, inside the same statement that claims the slot. Never sent by a client, and never 3 as a universal rule: 3 is what Starter includes.
+_Avoid_: quota (which read as a platform-wide constant, and was one)
+
+**Plan Tier**:
+Which plan an account is on, and what decides its **Agent Slot Entitlement** without an override: `starter` 3, `pro` 10, `business` 25, `enterprise` configured per account. An account with no plan recorded is Starter.
+_Avoid_: plan (unqualified), subscription, tier (unqualified)
+
+**Over Entitlement**:
+An account occupying more **Agent Slots** than its **Agent Slot Entitlement** allows, which a downgrade produces. Every existing **Agent** is kept, keeps its slot index, and keeps running; only creating another is refused, until enough are deleted to get below the entitlement.
+_Avoid_: over quota, overage (which suggests a charge), exceeded
 
 ### Running
 
