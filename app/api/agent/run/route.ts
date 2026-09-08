@@ -5,11 +5,23 @@
  * name the Run and the Agent it belongs to. Chat-style executions create a Run
  * too: they spend a credit, and spend that cannot be attributed to an Agent
  * cannot appear on the usage dashboard.
+ *
+ * The chat branch persists its transcript. It used to take the whole history
+ * from the request body, which meant history only existed in a browser tab and
+ * a client could present any past it liked. Arkitech stores it now, so the same
+ * conversation is there after a refresh, and so a Team member reached from
+ * Telegram or Slack is working from the same record.
  */
 import { AgentConfig, AgentRun, db } from "@/db";
 import { inngest } from "@/inngest/client";
 import { chargeRun, creditCostFor, isPaid, refundRun } from "@/lib/credits";
-import { executeAgent } from "@/lib/execute-agent";
+import { runAgentTurn } from "@/lib/agent-turn";
+import {
+    buildAgentInput,
+    getOrCreateWebConversation,
+    loadConversationMessages,
+    recordMessage,
+} from "@/lib/channels/conversations";
 import { currentUser } from "@clerk/nextjs/server";
 import type { CreatedAgentType } from "@/components/custom/agents/CreateAgent";
 import { and, eq, inArray } from "drizzle-orm";
@@ -115,62 +127,63 @@ export async function POST(req: NextRequest) {
     }
 
     // Chat-style runs execute immediately and still consume one usage credit.
-    const chatRunRows = await db.insert(AgentRun)
-        .values({
-            agentId: AgentConfigData.agentId,
-            userEmail: userEmail,
-            scheduledFor: now,
-            timezone: AgentConfigData.schedule?.timezone ?? 'UTC',
-            status: 'running',
-            creditCost: cost,
-            queuedAt: now,
-            startedAt: now,
-        }).returning();
+    const message = typeof input === 'string' ? input.trim() : '';
 
-    const chatRun = chatRunRows[0];
+    if (!message) {
+        return NextResponse.json({ error: 'Message is required' }, { status: 400 })
+    }
 
-    const charged = await chargeRun({
+    const thread = await getOrCreateWebConversation({
         userEmail,
         agentId: AgentConfigData.agentId,
-        runId: chatRun.id,
-        cost,
     });
 
-    if (!isPaid(charged)) {
-        await db.delete(AgentRun).where(eq(AgentRun.id, chatRun.id));
+    const inboundMessage = await recordMessage({
+        conversationId: thread.id,
+        userEmail,
+        direction: 'inbound',
+        senderKind: 'user',
+        body: message,
+        status: 'received',
+    });
+
+    // History comes from Arkitech's store, including the message just written,
+    // rather than from whatever the client claimed was said before.
+    const history = await loadConversationMessages({
+        conversationId: thread.id,
+        userEmail,
+    });
+
+    const turn = await runAgentTurn({
+        agentConfig: AgentConfigData,
+        userEmail,
+        input: buildAgentInput(history),
+    });
+
+    if (turn.outcome === 'insufficient_credit') {
         return NextResponse.json({ error: 'Insufficient credit balance.' }, { status: 402 })
     }
 
-    try {
-        const result = await executeAgent({
-            agentConfig: AgentConfigData,
-            userEmail: userEmail,
-            input: input ?? null
-        })
+    if (turn.outcome === 'agent_not_found') {
+        return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
+    }
 
-        await db.update(AgentRun)
-            .set({ status: 'completed', output: result, completedAt: new Date() })
-            .where(eq(AgentRun.id, chatRun.id));
-
-        return NextResponse.json(result);
-    } catch (e) {
-        // The agent failed, not the user. A credit buys a result.
-        await refundRun({
-            userEmail,
-            agentId: AgentConfigData.agentId,
-            runId: chatRun.id,
-            cost: chatRun.creditCost,
-            reason: 'agent_failure',
-        });
-
-        await db.update(AgentRun)
-            .set({
-                status: 'failed',
-                error: e instanceof Error ? e.message : 'Agent run failed',
-                completedAt: new Date()
-            })
-            .where(eq(AgentRun.id, chatRun.id));
-
+    if (turn.outcome === 'failed') {
         return NextResponse.json({ error: 'Agent run failed' }, { status: 500 })
     }
+
+    await recordMessage({
+        conversationId: thread.id,
+        userEmail,
+        direction: 'outbound',
+        senderKind: 'agent',
+        body: turn.output,
+        // Web replies are delivered by this response, so they are sent the
+        // moment they are written. Nothing else has to carry them.
+        status: 'sent',
+        runId: turn.runId,
+        replyToId: inboundMessage.id,
+    });
+
+    return NextResponse.json({ finalOutput: turn.output, conversationId: thread.id });
 }

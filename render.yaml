@@ -74,3 +74,17 @@ services:
         sync: false
       - key: INNGEST_SIGNING_KEY
         sync: false
+
+      # Seals the credentials stored by Telegram and Slack connections.
+      # Rotating it orphans every existing connection.
+      - key: CHANNEL_SECRET_KEY
+        sync: false
+
+      # The Arkitech Slack app. Telegram needs nothing here: each customer
+      # brings their own bot token through the Connections screen.
+      - key: SLACK_CLIENT_ID
+        sync: false
+      - key: SLACK_CLIENT_SECRET
+        sync: false
+      - key: SLACK_SIGNING_SECRET
+        sync: false

@@ -9,6 +9,7 @@ import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { UsageByAgent } from "@/components/custom/usage/UsageByAgent";
+import { Connections } from "@/components/custom/settings/Connections";
 import { UserDetailContext } from "@/context/UserDetailContext"
 import axios from "axios"
 import { Bell, Bot, CreditCard, Loader2, ShieldCheck } from "lucide-react"
@@ -93,6 +94,14 @@ function SettingsPage() {
                         description={`Current balance: ${currentUser?.usageCredits ?? 0} credits.`}
                     />
                 </div>
+            </section>
+
+            <section className="mt-8">
+                <h2 className="text-lg font-semibold">Communication</h2>
+                <p className="mb-4 mt-1 text-sm text-muted-foreground">
+                    Choose where you want to talk to your team. Use one, both, or neither.
+                </p>
+                <Connections />
             </section>
 
             <section className="mt-8">

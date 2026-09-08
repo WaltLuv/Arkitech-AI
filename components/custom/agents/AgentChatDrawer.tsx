@@ -40,11 +40,40 @@ function AgentChatDrawer({ agent, open, onOpenChange }: Props) {
     const [prompt, setPrompt] = useState("")
     const [messages, setMessages] = useState<ChatMessage[]>([])
     const [isAgentReplying, setIsAgentReplying] = useState(false)
+    const [isLoadingHistory, setIsLoadingHistory] = useState(false)
 
     const messagesEndRef = useRef<HTMLDivElement>(null)
 
+    // History lives in Arkitech, not in this component. Reopening the drawer
+    // shows the conversation as the Team member has it, including anything said
+    // through Telegram or Slack that reached the same Team member.
     useEffect(() => {
-        agent && setMessages([])
+        if (!agent?.agentId) {
+            setMessages([])
+            return
+        }
+
+        let current = true
+        setIsLoadingHistory(true)
+
+        axios
+            .get(`/api/conversations?agentId=${encodeURIComponent(agent.agentId)}`)
+            .then((result) => {
+                if (!current) return
+                setMessages(result.data?.messages ?? [])
+            })
+            .catch(() => {
+                // An unreadable history should not stop someone sending a new
+                // message; it starts empty and the send still works.
+                if (current) setMessages([])
+            })
+            .finally(() => {
+                if (current) setIsLoadingHistory(false)
+            })
+
+        return () => {
+            current = false
+        }
     }, [agent])
 
     useEffect(() => {
@@ -68,17 +97,16 @@ function AgentChatDrawer({ agent, open, onOpenChange }: Props) {
         setMessages((prev) => [...prev, userMessage])
         setPrompt("")
         setIsAgentReplying(true)
-        const chatHistory = [...messages, userMessage]
         try {
 
+            // Only the new message goes up. The server holds the transcript and
+            // assembles the Team member's context from it, so a client cannot
+            // present a history that never happened.
             const result = await axios.post("/api/agent/run", {
-                agentConfig: agent,
                 agentId: agent?.agentId,
-                input: JSON.stringify(chatHistory)
+                input: message
 
             })
-
-            console.log(result.data?.finalOutput);
 
             const updatedUser = await axios.post('/api/users')
             setUserDetail(updatedUser.data)
@@ -157,6 +185,13 @@ function AgentChatDrawer({ agent, open, onOpenChange }: Props) {
                             agent={agent}
                             content={`Hi! I’m ${agent?.name}. What would you like me to work on?`}
                         />
+
+                        {isLoadingHistory && (
+                            <div className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
+                                <Loader2 className="size-3.5 animate-spin" />
+                                Loading your conversation
+                            </div>
+                        )}
 
                         {messages.map((message) =>
                             message.role === "user" ? (

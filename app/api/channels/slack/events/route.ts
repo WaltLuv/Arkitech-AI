@@ -18,6 +18,7 @@
 import { channelConnection, db } from "@/db";
 import { receiveInboundMessage } from "@/lib/channels/inbound";
 import { sendChannelNotice } from "@/lib/channels/outbound";
+import { slackAccountKey } from "@/lib/channels/slack/identity";
 import { parseSlackEvent } from "@/lib/channels/slack/parse";
 import { verifySlackRequest } from "@/lib/channels/slack/verify";
 import { and, eq } from "drizzle-orm";
@@ -64,13 +65,26 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
     }
 
+    const inbound = parseSlackEvent(payload);
+
+    if (!inbound) {
+        return NextResponse.json({ ok: true });
+    }
+
+    // A connection is a workspace and a person, not a workspace alone: two
+    // Arkitech customers can work in the same Slack workspace. The sender is
+    // half the key, so a colleague who messages the app resolves to no
+    // connection and reaches nothing.
     const rows = await db
         .select()
         .from(channelConnection)
         .where(
             and(
                 eq(channelConnection.provider, "slack"),
-                eq(channelConnection.externalAccountId, teamId),
+                eq(
+                    channelConnection.externalAccountId,
+                    slackAccountKey(teamId, inbound.externalUserId),
+                ),
             ),
         )
         .limit(1);
@@ -78,15 +92,8 @@ export async function POST(req: NextRequest) {
     const connection = rows[0];
 
     if (!connection) {
-        // A workspace Arkitech has no connection for. Acknowledged rather than
-        // refused: the app may still be installed somewhere Arkitech has since
-        // disconnected, and a 403 would have Slack retry it three more times.
-        return NextResponse.json({ ok: true });
-    }
-
-    const inbound = parseSlackEvent(payload);
-
-    if (!inbound) {
+        // Nobody Arkitech knows. Acknowledged rather than refused: a 403 would
+        // have Slack retry it three more times to the same conclusion.
         return NextResponse.json({ ok: true });
     }
 
