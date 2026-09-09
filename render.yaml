@@ -14,7 +14,10 @@ services:
     runtime: node
     plan: starter
     region: oregon
-    branch: main
+    # The branch carrying this blueprint. `main` does not: it predates the
+    # health endpoint this file points healthCheckPath at, so a service built
+    # from it would never pass a health check. Retarget once this merges.
+    branch: claude/arkitech-simplified
 
     buildCommand: npm ci && npm run build
     startCommand: npm run start
@@ -73,6 +76,13 @@ services:
       - key: INNGEST_EVENT_KEY
         sync: false
       - key: INNGEST_SIGNING_KEY
+        sync: false
+
+      # The service's own public address, used to build the Telegram webhook
+      # URL and the Slack OAuth redirect. Both connection flows refuse rather
+      # than guess when it is unset, so channels stay dark without it. Must be
+      # https: Telegram delivers to nothing else.
+      - key: NEXT_PUBLIC_APP_URL
         sync: false
 
       # Seals the credentials stored by Telegram and Slack connections.
