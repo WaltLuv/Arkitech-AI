@@ -43,6 +43,7 @@ const SECRET_ENV = [
 
 const PATTERNS = [
     [/wss?:\/\/[^\s"'<>]+/gi, "[redacted-ws-url]"],
+    [/postgres(ql)?:\/\/[^\s"'<>]+/gi, "[redacted-connection-string]"],
     [/https?:\/\/[^\s"'<>]*devtools\/(browser|page)\/[^\s"'<>]*/gi, "[redacted-devtools-url]"],
     [/apiKey=[^&\s"'<>]+/gi, "apiKey=[redacted]"],
     [/signingKey=[^&\s"'<>]+/gi, "signingKey=[redacted]"],
@@ -67,6 +68,25 @@ for (const name of SECRET_ENV) {
     const before = text;
     text = text.replace(new RegExp(escaped, "g"), `[redacted-${name}]`);
     if (text !== before) removed += 1;
+}
+
+/**
+ * A connection failure names the host on its own, without the connection
+ * string around it, so redacting the literal DATABASE_URL misses it. The host
+ * is derived from the URL and removed separately, which is the only way to
+ * catch a disclosure that never contains the secret itself.
+ */
+if (process.env.DATABASE_URL) {
+    try {
+        const { hostname } = new URL(process.env.DATABASE_URL);
+        if (hostname.length >= 4) {
+            const before = text;
+            text = text.split(hostname).join("[redacted-database-host]");
+            if (text !== before) removed += 1;
+        }
+    } catch {
+        // A malformed URL has no host to leak.
+    }
 }
 
 for (const [pattern, replacement] of PATTERNS) {

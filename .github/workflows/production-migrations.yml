@@ -1,0 +1,112 @@
+name: Production Migrations
+
+# Manual only, and deliberately so. This job holds the production database
+# credential, and a migration that runs because someone pushed a branch is a
+# migration nobody decided to run.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: What to do
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - apply
+      reason:
+        description: Why this run is happening (recorded in the log)
+        required: false
+        default: Production migration
+
+permissions:
+  contents: read
+
+# One at a time, and never cancelled mid-flight: each migration applies in its
+# own transaction, but killing the runner between two of them leaves the set
+# half-applied with nothing saying which half.
+concurrency:
+  group: production-migrations
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply drizzle migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Requires a GitHub Environment named `production`. Put the DATABASE_URL
+    # secret there rather than on the repository, so a required reviewer can
+    # gate every apply. Neon's direct endpoint, not the pooled one: PgBouncer
+    # in transaction mode is right for the app and wrong for DDL.
+    environment: production
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # The runner is scripted against psql rather than a driver, so that a
+      # migration applies exactly as it would by hand. ubuntu-latest ships the
+      # client already; this only proves it.
+      - name: Check psql is available
+        run: psql --version
+
+      - name: Check the secret is present
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL is not set on the production environment."
+            exit 1
+          fi
+          echo "DATABASE_URL is set (value hidden)."
+
+      # Connects, counts the tables, and lists what would be applied, without
+      # applying anything. Runs in both modes: there is no reason to discover
+      # an unreachable database halfway through an apply.
+      - name: Dry run
+        run: |
+          set -o pipefail
+          echo "Reason: ${{ inputs.reason }}"
+          node scripts/apply-migrations.mjs --dry-run 2>&1 | tee migration.log
+
+      - name: Apply migrations
+        if: inputs.mode == 'apply'
+        run: |
+          set -o pipefail
+          node scripts/apply-migrations.mjs 2>&1 | tee -a migration.log
+
+      # The runner redacts its own output, including the bare hostname psql
+      # names on a connection failure. This is the second line, and it covers
+      # anything printed by a step other than the runner.
+      - name: Scrub the log
+        if: always()
+        run: node scripts/scrub-log.mjs migration.log
+
+      - name: Keep the scrubbed log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-migration-log
+          path: migration.log
+          retention-days: 30
+
+      - name: Report the result
+        if: always()
+        run: |
+          {
+            if [ "${{ inputs.mode }}" = "apply" ]; then
+              echo "### Production migrations applied"
+            else
+              echo "### Production migrations: dry run only"
+              echo "Nothing was written. Re-run with mode \`apply\` to migrate."
+            fi
+            echo ""
+            echo "See the production-migration-log artifact for the detail."
+          } >> "$GITHUB_STEP_SUMMARY"
