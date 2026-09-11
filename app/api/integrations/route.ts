@@ -7,7 +7,7 @@ import { currentUser } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
 
     const user = await currentUser();
 

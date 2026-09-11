@@ -1,11 +1,9 @@
 /**
  * API route that returns tool metadata and connection state for an agent.
  */
-import { AgentConfig, db } from "@/db";
 import { getOrCreateAgentSession } from "@/lib/get-agent-composio-session";
 import { loadOwnedAgent } from "@/lib/agent-ownership";
 import { currentUser } from "@clerk/nextjs/server";
-import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(req: NextRequest) {
@@ -26,7 +24,7 @@ export async function GET(req: NextRequest) {
 
     const agentConfig = ownership.agent;
     const allowedTools: any = agentConfig?.tools;
-    //@ts-ignore
+    //@ts-expect-error the Composio SDK's published types do not match its runtime shape here
     const session = await getOrCreateAgentSession(agentConfig, user?.primaryEmailAddress?.emailAddress)
     const toolKitResult = await session.toolkits();
 

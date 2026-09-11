@@ -6,7 +6,7 @@
  * credential, a cookie, or a writable browser capability is refused outright.
  * A guard that callers can forget is not a guard.
  */
-import { browserArtifact, browserEvent, db } from "@/db";
+import { browserArtifact, db } from "@/db";
 import { sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 

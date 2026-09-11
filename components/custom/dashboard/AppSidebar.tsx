@@ -25,7 +25,7 @@ import { useContext, useEffect, useState } from "react"
 export function AppSidebar() {
 
     const path = usePathname();
-    const { userDetail, setUserDetail } = useContext(UserDetailContext);
+    const { userDetail } = useContext(UserDetailContext);
     const router = useRouter();
 
     // The slot counter shows how many Agents exist, not the agentCredits

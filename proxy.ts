@@ -15,7 +15,6 @@
  * secret token and by HMAC signature respectively, before reading the body.
  */
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
 
 const isProtectedRoute = createRouteMatcher([
   "/dashboard",

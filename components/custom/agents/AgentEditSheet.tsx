@@ -4,7 +4,7 @@
  * Agent editor sheet for updating instructions, schedule, skills, status, image, and tool connections.
  */
 
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useState } from "react"
 
 import {
     Sheet,
@@ -33,19 +33,16 @@ import {
 } from "@/components/ui/select"
 
 import {
-    Link2,
     Loader2,
     Loader2Icon,
     Plus,
     Shuffle,
-    Unlink,
     X,
 } from "lucide-react"
 
 import { CreatedAgentType } from "./CreateAgent"
 import { toast } from "@/components/ui/toast"
 import axios from "axios"
-import Image from "next/image"
 
 type Props = {
     children?: React.ReactNode

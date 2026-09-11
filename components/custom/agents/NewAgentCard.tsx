@@ -3,15 +3,13 @@
  */
 import React from 'react'
 import { CreatedAgentType } from './CreateAgent'
-import { Calendar } from '@/components/ui/calendar'
-import { CalendarCheck2Icon, Delete, Ellipsis, Pause, Pencil, Play, Trash } from 'lucide-react'
+import { CalendarCheck2Icon, Ellipsis, Pause, Pencil, Play, Trash } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuGroup,
     DropdownMenuItem,
-    DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"

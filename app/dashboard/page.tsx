@@ -106,7 +106,7 @@ function DashboardPage() {
                             {moment().format("dddd, MMMM D")}
                         </p>
                         <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">{greeting}, {firstName}</h1>
-                        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 md:text-base">Here's the latest pulse from your agents, runs, schedules, and anything that needs a closer look.</p>
+                        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 md:text-base">Here&apos;s the latest pulse from your agents, runs, schedules, and anything that needs a closer look.</p>
                     </div>
                     <Button variant="outline" className="w-fit border-white/80 bg-white/80 shadow-sm hover:bg-white" onClick={getDashboardRuns} disabled={loading}>
                         {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}

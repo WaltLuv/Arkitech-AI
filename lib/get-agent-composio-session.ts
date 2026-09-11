@@ -45,8 +45,7 @@ export const getActiveConnectedAccounts = async (userEmail: string, toolSlugs: s
 }
 
 const SaveComposioSessionId = async (agentId: string, session: any) => {
-    const result = await db.update(AgentConfig).set({
+    await db.update(AgentConfig).set({
         composioSessionId: session.sessionId
     }).where(eq(AgentConfig.agentId, agentId));
-    console.log(result);
 }

@@ -1,12 +1,10 @@
 /**
  * API route that starts or removes Composio toolkit connections for a specific agent.
  */
-import { AgentConfig, db } from "@/db";
 import { composio } from "@/lib/composio";
 import { getActiveConnectedAccounts, getOrCreateAgentSession } from "@/lib/get-agent-composio-session";
 import { loadOwnedAgent } from "@/lib/agent-ownership";
 import { currentUser } from "@clerk/nextjs/server";
-import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
@@ -23,7 +21,7 @@ export async function POST(req: NextRequest) {
 
     // Reuse the row ownership already resolved, rather than re-reading it
     // unscoped.
-    //@ts-ignore
+    //@ts-expect-error the Composio SDK's published types do not match its runtime shape here
     const session = await getOrCreateAgentSession(ownership.agent, user?.primaryEmailAddress?.emailAddress)
     const connectedAccounts = await getActiveConnectedAccounts(user?.primaryEmailAddress?.emailAddress ?? '', [toolSlug]);
 

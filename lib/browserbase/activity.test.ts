@@ -60,7 +60,7 @@ describe("assertSafeDetail", () => {
     it("throws rather than silently stripping", () => {
         // Stripping would leave the caller believing it was recorded and the
         // next reader believing the trail is complete.
-        let detail: Record<string, unknown> = { cookie: "c" };
+        const detail: Record<string, unknown> = { cookie: "c" };
         expect(() => assertSafeDetail(detail)).toThrow();
         expect(detail.cookie).toBe("c");
     });

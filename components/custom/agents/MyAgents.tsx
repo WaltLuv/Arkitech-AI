@@ -11,12 +11,11 @@ import {
     DropdownMenuContent,
     DropdownMenuGroup,
     DropdownMenuItem,
-    DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Button } from '@/components/ui/button';
-import { Calendar, CalendarClockIcon, Ellipsis, MessageCircle, Pause, Pencil, Play, PlaySquareIcon, Trash } from 'lucide-react';
+import { CalendarClockIcon, Ellipsis, MessageCircle, Pause, Pencil, Play, PlaySquareIcon, Trash } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import AgentEditSheet from './AgentEditSheet';
 import AgentChatDrawer from './AgentChatDrawer';
@@ -47,7 +46,7 @@ function MyAgents() {
 
     const updateAgentStatus = async (agentConfig: CreatedAgentType) => {
 
-        const result = await axios.put('/api/agent/configure', {
+        await axios.put('/api/agent/configure', {
             ...agentConfig,
             status: agentConfig?.status == 'active' ? 'pause' : 'active'
         })
@@ -95,7 +94,7 @@ function MyAgents() {
     return (
         <div className='mt-5'>
             <h2 className='font-bold text-2xl'>My Agents</h2>
-            <p className='text-sm text-muted-foreground mt-1'>Run, Manage and Update All the agents you've created.</p>
+            <p className='text-sm text-muted-foreground mt-1'>Run, Manage and Update All the agents you&apos;ve created.</p>
 
             <div className='grid grid-cols-2 2xl:grid-cols-3 gap-5 mt-5'>
                 {myAgents === undefined && <AgentCardSkeletonList />}

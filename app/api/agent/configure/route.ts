@@ -7,7 +7,7 @@ import { AgentConfigSystemPrompt } from "@/data/Prompt";
 import { AgentConfigRespSchema } from "@/data/ResponseSchema";
 import { AgentConfig, AgentRun, db, tools } from "@/db";
 import { currentUser } from "@clerk/nextjs/server";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { loadOwnedAgent } from "@/lib/agent-ownership";
 import { calculateNextDailyRun } from "@/lib/agent-schedule";
 import { agentSlotLimitMessage, createAgentWithinQuota } from "@/lib/agent-slots";
@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
                 }) : null
 
             if (firstRun) {
-                const runInsert = await db.insert(AgentRun)
+                await db.insert(AgentRun)
                     .values({
                         agentId,
                         userEmail: userEmail,
@@ -160,7 +160,7 @@ export async function PUT(req: NextRequest) {
             .returning();
 
         // Remove stale future occurrences before creating a replacement schedule.
-        const deleteScheduledAgentRun = await db.delete(AgentRun)
+        await db.delete(AgentRun)
             .where(and(eq(AgentRun.agentId, ownership.agent.agentId), eq(AgentRun.status, 'scheduled')))
         // Active recurring agents should always have exactly one upcoming run.
         if (agentConfig?.status == 'active') {
@@ -190,7 +190,7 @@ export async function PUT(req: NextRequest) {
 }
 
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
     const user = await currentUser();
 
     if (!user) {

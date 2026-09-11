@@ -11,7 +11,6 @@ import {
     AlertDialogFooter,
     AlertDialogHeader,
     AlertDialogTitle,
-    AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import axios from 'axios'
 import { toast } from '@/components/ui/toast'
